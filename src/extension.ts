@@ -29,7 +29,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 	// Register the command
-	let disposable = vscode.commands.registerCommand('pico-littlefs-upload.uploadLittleFS', () => {
+	let disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', () => {
 		//let str = JSON.stringify(arduinoContext, null, 4);
 		//console.log(str);
 

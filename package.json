@@ -1,6 +1,6 @@
 {
-  "name": "pico-littlefs-upload",
-  "displayName": "pico-littlefs-upload",
+  "name": "arduino-littlefs-upload",
+  "displayName": "arduino-littlefs-upload",
   "description": "Build and uploads LittleFS filesystems for the Arduino-Pico RP2040 core under Arduino IDE 2.2.1 or higher",
   "version": "0.0.2",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "license": "MIT",
   "repository": {
-    "url": "https://github.com/earlephilhower/pico-littlefs-upload"
+    "url": "https://github.com/earlephilhower/arduino-littlefs-upload"
   },
   "categories": [
     "Other"
@@ -18,8 +18,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "pico-littlefs-upload.uploadLittleFS",
-        "title": "Upload LittleFS to Pico"
+        "command": "arduino-littlefs-upload.uploadLittleFS",
+        "title": "Upload LittleFS to Pico/ESP8266"
       }
     ]
   },
