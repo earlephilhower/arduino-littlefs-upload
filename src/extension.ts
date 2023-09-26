@@ -30,14 +30,21 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
-		// TODO - Can we get the ArduinoContext to export the actual set of values, not just the label?  Then we can use arduinoContext.boardDetails.configOptions
-		if ((arduinoContext.compileSummary?.buildProperties["build.fs_start"] === undefined) || (arduinoContext.compileSummary?.buildProperties["build.fs_end"] === undefined)) {
-			vscode.window.showErrorMessage("No filesystem settings defined. Compile the sketch once.");
-			return;
-		}
+		// Need to find the selected menu item, then get the associated build values
+		let fsStart = 0;
+		let fsEnd = 0;
+		arduinoContext.boardDetails.configOptions.forEach( (opt) => {
+			if (opt.option === "flash") {
+				opt.values.forEach( (itm) => {
+					if (itm.selected) {
+						let menustr = "menu.flash." + itm.value + ".build.";
+						fsStart = Number(arduinoContext.boardDetails?.buildProperties[menustr + "fs_start"]);
+						fsEnd = Number(arduinoContext.boardDetails?.buildProperties[menustr + "fs_end"]);
+					}
+				});
+			}
+		});
 
-		let fsStart = Number(arduinoContext.compileSummary?.buildProperties["build.fs_start"]);
-		let fsEnd = Number(arduinoContext.compileSummary?.buildProperties["build.fs_end"]);
 		let page = 256;
 		let blocksize = 4096;
 
@@ -78,12 +85,12 @@ export function activate(context: vscode.ExtensionContext) {
 		} // OTW, assume it's in the path is best we can do
 
 		let dataFolder = arduinoContext.sketchPath + "/data";
-		var path = require('path');
-		let imageFile = "/" + path.basename(arduinoContext.sketchPath);
-		if (arduinoContext.compileSummary?.buildPath !== undefined) {
-			imageFile = arduinoContext.compileSummary?.buildPath + imageFile;
-		}
-		imageFile = imageFile + ".mklittlefs.bin";
+
+		// We can't always know where the compile path is, so just use a temp name
+		const tmp = require('tmp');
+		tmp.setGracefulCleanup();
+		let imageFile = tmp.tmpNameSync({postfix: ".littlefs.bin"});
+
 		let buildOpts =  ["-c", dataFolder, "-p", String(page), "-b", String(blocksize), "-s", String(fsEnd - fsStart), imageFile];
 		let uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
 		
@@ -99,5 +106,3 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
-
-

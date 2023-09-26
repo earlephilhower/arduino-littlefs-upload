@@ -44,6 +44,7 @@
     "typescript": "^5.1.6"
   },
   "dependencies": {
-    "execa": "^8.0.1"
+    "execa": "^8.0.1",
+    "tmp": "^0.2.1"
   }
 }
