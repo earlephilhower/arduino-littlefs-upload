@@ -1,14 +1,11 @@
 # pico-littlefs-upload
-
-(C) 2023 Earle F. Philhower, III
-
-MIT licensed, see LICENSE.md
+MIT license -- (C) 2023  [Earle F. Philhower, III](mailto:earlephilhower@yahoo.com)
 
 Really rough LittleFS uploader compatiblew with IDE 2.2.1 or higher.
 
 ## Usage
 
-`[Ctrl]+[Shift]+[P]``, then "`Upload LittleFS to Pico`"
+`[Ctrl]+[Shift]+[P]`, then "`Upload LittleFS to Pico`"
 
 ## Glitches
 
