@@ -1,0 +1,49 @@
+{
+  "name": "pico-littlefs-upload",
+  "displayName": "pico-littlefs-upload",
+  "description": "Build and uploads LittleFS filesystems for the Arduino-Pico RP2040 core under Arduino IDE 2.2.1 or higher",
+  "version": "0.0.2",
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "url": "https://github.com/earlephilhower/pico-littlefs-upload"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pico-littlefs-upload.uploadLittleFS",
+        "title": "Upload LittleFS to Pico"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.1",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.82.0",
+    "@typescript-eslint/eslint-plugin": "^6.4.1",
+    "@typescript-eslint/parser": "^6.4.1",
+    "@vscode/test-electron": "^2.3.4",
+    "eslint": "^8.47.0",
+    "glob": "^10.3.3",
+    "mocha": "^10.2.0",
+    "typescript": "^5.1.6"
+  },
+  "dependencies": {
+    "execa": "^8.0.1"
+  }
+}
