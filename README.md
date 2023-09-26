@@ -1,11 +1,11 @@
-# pico-littlefs-upload
-MIT license -- (C) 2023  [Earle F. Philhower, III](mailto:earlephilhower@yahoo.com)
+# arduino-littlefs-upload
+MIT license -- (C) 2023 Earle F. Philhower, III
 
-Really rough LittleFS uploader compatiblew with IDE 2.2.1 or higher.
+Really rough LittleFS uploader compatible with IDE 2.2.1 or higher and the Raspberry Pi Pico RP2040 and Espressif ESP8266 chips.
 
 ## Usage
 
-`[Ctrl]+[Shift]+[P]`, then "`Upload LittleFS to Pico`"
+`[Ctrl]+[Shift]+[P]`, then "`Upload LittleFS to Pico/ESP8266`"
 
 ## Glitches
 
