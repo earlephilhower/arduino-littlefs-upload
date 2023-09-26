@@ -1,5 +1,7 @@
-# pico-littlefs-upload README
+# pico-littlefs-upload
+
 (C) 2023 Earle F. Philhower, III
+
 MIT licensed, see LICENSE.md
 
 Really rough LittleFS uploader compatiblew with IDE 2.2.1 or higher.
