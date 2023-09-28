@@ -9,12 +9,11 @@ let writerReady : boolean = false;
 
 function makeTerminal(title : string) {
 	// If it exists, move it to the front
-	vscode.window.terminals.forEach( (w) => {
-		if (w.name === title) {
-			w.show(false);
-			return;
-		}
-	});
+	let w = vscode.window.terminals.find( (w) => ((w.name === title) && (w.exitStatus === undefined)));
+	if (w !== undefined) {
+		w.show(false);
+		return;
+	}
 	// Not found, make a new terminal
 	const pty = {
 		onDidWrite: writeEmitter.event,
@@ -40,8 +39,6 @@ function findTool(ctx: ArduinoContext, match : string) : string | undefined {
 	return ret;
 }
 
-
-
 export function activate(context: vscode.ExtensionContext) {
 	// Get the Arduino info extension loaded
 	const arduinoContext: ArduinoContext = vscode.extensions.getExtension('dankeboy36.vscode-arduino-api')?.exports;
@@ -50,8 +47,6 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showErrorMessage("Unable to load the Arduino IDE Context extension.");
 		return;
 	}
-
-	makeTerminal("LittleFS Upload");
 
 	// Register the command
 	const disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', async () => {
@@ -64,6 +59,7 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
+		makeTerminal("LittleFS Upload");
 		// Wait for the terminal to become active.
 		while (!writerReady) {
 			await new Promise( resolve => setTimeout(resolve, 100) );
@@ -246,4 +242,4 @@ export function activate(context: vscode.ExtensionContext) {
 	  context.subscriptions.push(disposable);
 }
 
-export function deactivate() {}
+export function deactivate() { }
