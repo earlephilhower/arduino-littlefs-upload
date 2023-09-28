@@ -2,7 +2,8 @@
 (C) 2023 Earle F. Philhower, III
 MIT licensed, see LICENSE.md
 
-Really rough LittleFS uploader compatiblew with Arduino IDE 2.2.1 or higher.
+LittleFS uploader compatible with Arduino IDE 2.2.1 or higher.
+
 For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico) and the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino).
 
 ## Usage
@@ -11,9 +12,11 @@ For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://
 
 ## Glitches
 
-The first sketch auto-opened by the IDE presently has corrupted state and uploads cannot be done on it.
-You need to open another sketch, close the first auto-opened sketch, and then re-open it to upload for that one.
-You also need to run a build/compile (upload of sketch is uptional) one time for certain file system parameters to be available.
+The first sketch auto-opened by the IDE presently may have corrupted state which causes uploads to fail.
+To work around this, you can change the board once (to anything) and then change it back to your proper board.
+You can also open another sketch, close the auto-opened one, then re-open it.
+
+A fix is already in the Arduino repository for this issue.
 
 ## Installation
 
