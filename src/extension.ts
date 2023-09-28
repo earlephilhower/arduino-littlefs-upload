@@ -2,16 +2,10 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import type { ArduinoContext } from 'vscode-arduino-api';
 import { platform } from 'node:os';
-import { spawn, spawnSync } from 'child_process';
-
-
-import { exec as cpExec } from "child_process";
-import { promisify } from "util";
-
-// promisified Node executable (Node 10+)
-const exec = promisify(cpExec);
+import { spawn } from 'child_process';
 
 const writeEmitter = new vscode.EventEmitter<string>();
+let writerReady : boolean = false;
 
 function makeTerminal(title : string) {
 	// If it exists, move it to the front
@@ -24,8 +18,8 @@ function makeTerminal(title : string) {
 	// Not found, make a new terminal
 	const pty = {
 		onDidWrite: writeEmitter.event,
-		open: () => {},
-		close: () => {},
+		open: () => { writerReady = true; },
+		close: () => { writerReady = false; },
 		handleInput: () => {}
 	};
 	let terminal = (<any>vscode.window).createTerminal({name: title, pty});
@@ -46,6 +40,8 @@ function findTool(ctx: ArduinoContext, match : string) : string | undefined {
 	return ret;
 }
 
+
+
 export function activate(context: vscode.ExtensionContext) {
 	// Get the Arduino info extension loaded
 	const arduinoContext: ArduinoContext = vscode.extensions.getExtension('dankeboy36.vscode-arduino-api')?.exports;
@@ -58,7 +54,7 @@ export function activate(context: vscode.ExtensionContext) {
 	makeTerminal("LittleFS Upload");
 
 	// Register the command
-	let disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', () => {
+	const disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', async () => {
 
 		//let str = JSON.stringify(arduinoContext, null, 4);
 		//console.log(str);
@@ -66,6 +62,11 @@ export function activate(context: vscode.ExtensionContext) {
 		if ((arduinoContext.boardDetails === undefined) ||  (arduinoContext.fqbn === undefined)){
 			vscode.window.showErrorMessage("Board details not available. Compile the sketch once.");
 			return;
+		}
+
+		// Wait for the terminal to become active.
+		while (!writerReady) {
+			await new Promise( resolve => setTimeout(resolve, 100) );
 		}
 
 		// Clear the terminal
@@ -185,14 +186,20 @@ export function activate(context: vscode.ExtensionContext) {
 		writeEmitter.fire("Building LittleFS filesystem\r\n");
 		writeEmitter.fire(mklittlefs + " " + buildOpts.join(" ") + "\r\n");
 
-		let mkfs = spawnSync(mklittlefs, buildOpts);
-		writeEmitter.fire(String(mkfs.stdout).replace(/\n/g, "\r\n"));
-		if (mkfs.stderr) {
-			writeEmitter.fire(String(mkfs.stderr).replace(/\n/g, "\r\n"));
+		const mkfs = spawn(mklittlefs, buildOpts);
+		for await (const chunk of mkfs.stdout) {
+			writeEmitter.fire(String(chunk).replace(/\n/g, "\r\n"));
 		}
-		writeEmitter.fire("\r\n\r\n");
-		if (mkfs.status) {
-			writeEmitter.fire("ERROR:  Mklittlefs failed, error code: " + String(mkfs.status) + "\r\n\r\n");
+		for await (const chunk of mkfs.stderr) {
+			writeEmitter.fire(String(chunk).replace(/\n/g, "\r\n"));
+		}
+		// Wait until the executable finishes
+		let exitCode = await new Promise( (resolve, reject) => {
+			mkfs.on('close', resolve);
+		});
+
+		if (exitCode) {
+			writeEmitter.fire("ERROR:  Mklittlefs failed, error code: " + String(exitCode) + "\r\n\r\n");
 			return;
 		}
 
@@ -214,17 +221,22 @@ export function activate(context: vscode.ExtensionContext) {
 			uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
 		}
 
-		writeEmitter.fire("Uploading LittleFS filesystem\r\n");
+		writeEmitter.fire("\r\n\r\nUploading LittleFS filesystem\r\n");
 		writeEmitter.fire(python3 + " " + uploadOpts.join(" ") + "\r\n");
-		let upld = spawnSync(python3, uploadOpts);
-
-		writeEmitter.fire(String(upld.stdout).replace(/\n/g, "\r\n"));
-		if (upld.stderr) {
-			writeEmitter.fire(String(upld.stderr).replace(/\n/g, "\r\n"));
+		const upld = spawn(python3, uploadOpts);
+		for await (const chunk of upld.stdout) {
+			writeEmitter.fire(String(chunk).replace(/\n/g, "\r\n"));
 		}
-		writeEmitter.fire("\r\n\r\n");
-		if (upld.status) {
-			writeEmitter.fire("ERROR:  Upload failed, error code: " + String(upld.status) + "\r\n\r\n");
+		for await (const chunk of upld.stderr) {
+			writeEmitter.fire(String(chunk).replace(/\n/g, "\r\n"));
+		}
+		// Wait until the executable finishes
+		exitCode = await new Promise( (resolve, reject) => {
+			upld.on('close', resolve);
+		});
+
+		if (exitCode) {
+			writeEmitter.fire("ERROR:  Upload failed, error code: " + String(exitCode) + "\r\n\r\n");
 			return;
 		}
 
