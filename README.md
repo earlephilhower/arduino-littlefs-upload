@@ -1,14 +1,13 @@
 # arduino-littlefs-upload README
 (C) 2023 Earle F. Philhower, III
+
 MIT licensed, see LICENSE.md
 
-LittleFS uploader compatible with Arduino IDE 2.2.1 or higher.
-
-For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico) and the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino).
+LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico) and the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino).
 
 ## Usage
 
-`[Ctrl]+[Shift]+[P]``, then "`Upload LittleFS to Pico/ESP8266"
+`[Ctrl]+[Shift]+[P]`, then "`Upload LittleFS to Pico/ESP8266`"
 
 ## Glitches
 
