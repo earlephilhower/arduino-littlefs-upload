@@ -7,7 +7,9 @@ LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the 
 
 ## Usage
 
-`[Ctrl]` + `[Shift]` + `[P]`, then "`Upload LittleFS to Pico/ESP8266`"
+`[Ctrl]` + `[Shift]` + `[P]`, then "`Upload LittleFS to Pico/ESP8266`".
+
+On macOS, press `[⌘]` + `[Shift]` + `[P]` to open the Commad Palette in the Arduino IDE, then "`Upload LittleFS to Pico/ESP8266`".
 
 ## Glitches
 
