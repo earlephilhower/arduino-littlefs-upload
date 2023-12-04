@@ -21,4 +21,4 @@ A fix is already in the Arduino repository for this issue.
 
 ## Installation
 
-Copy the [VSIX file](https://github.com/earlephilhower/arduino-littlefs-upload/blob/main/arduino-littlefs-upload-1.0.0.vsix) to `~/.arduinoIDE/plugins/` on Mac (you may need to make this directory yourself beforehand) or `C:\Program Files\Arduino IDE\resources\app\plugins` on Windows. Restart the IDE.
+Copy the [VSIX file](https://github.com/earlephilhower/arduino-littlefs-upload/releases) to `~/.arduinoIDE/plugins/` on Mac and Linux or `C:\Users\<username>\.arduinoIDE\plugins\` on Windows (you may need to make this directory yourself beforehand). Restart the IDE.
