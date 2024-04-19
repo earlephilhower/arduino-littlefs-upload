@@ -103,6 +103,7 @@ export function activate(context: vscode.ExtensionContext) {
         // Figure out what we're running on
         let pico = false;
         let esp8266 = false;
+        let esp32 = false;
         switch (arduinoContext.fqbn.split(':')[1]) {
             case "rp2040": {
                 pico = true;
@@ -110,6 +111,10 @@ export function activate(context: vscode.ExtensionContext) {
             }
             case "esp8266": {
                 esp8266 = true;
+                break;
+            }
+            case "esp32": {
+                esp32 = true;
                 break;
             }
             default: {
@@ -124,6 +129,44 @@ export function activate(context: vscode.ExtensionContext) {
         let page = 0;
         let blocksize = 0;
         let uploadSpeed = 115200; // ESP8266-only
+        if (esp32) {
+            // Selected partition is in the key build.partitions
+            let partitions = arduinoContext.boardDetails.buildProperties["build.partitions"];
+            if (!partitions) {
+                writeEmitter.fire("ERROR: Partitions not defined for this ESP32 board\r\n");
+                return;
+            }
+            // Selected Partition is the filename.csv in the partitions directory
+            writeEmitter.fire("Using partition: ");
+            writeEmitter.fire(partitions);
+            writeEmitter.fire("\r\n");
+            let platformPath = arduinoContext.boardDetails.buildProperties["runtime.platform.path"];
+            let partitionFile = platformPath + "/tools/partitions/" + partitions + ".csv";
+            if (!fs.existsSync(partitionFile)) {
+                writeEmitter.fire("ERROR: Partition file not found!\r\n");
+                writeEmitter.fire(partitionFile);
+                return;
+            }
+            let partitionData = fs.readFileSync(partitionFile, 'utf8');
+            let partitionDataArray = partitionData.split("\n");
+            for (var i = 1; i < partitionDataArray.length; i++){
+                var partitionEntry = partitionDataArray[i].split(",");
+                if (partitionEntry[0].includes("spiffs")) {
+                    fsStart = parseInt(partitionEntry[3], 16); // Partition Offset
+                    fsEnd = fsStart + parseInt(partitionEntry[4], 16); // Partition Length
+                }
+            }
+            if (!fsStart || !fsEnd) {
+                writeEmitter.fire("ERROR: Partition entry not found in csv file!\r\n");
+                return;
+            }
+            
+            uploadSpeed = Number(arduinoContext.boardDetails.buildProperties["upload.speed"]);
+            // Fixed for ESP32
+            page = 256;
+            blocksize = 4096;
+        }
+        
         arduinoContext.boardDetails.configOptions.forEach( (opt) => {
             let optSeek = pico ? "flash" : "eesz";
             let startMarker = pico ? "fs_start" : "spiffs_start";
@@ -163,11 +206,15 @@ export function activate(context: vscode.ExtensionContext) {
         let tool = undefined;
         if (pico) {
             tool = findTool(arduinoContext, "runtime.tools.pqt-mklittlefs");
+        } else if (esp32) {
+            tool = findTool(arduinoContext, "runtime.tools.mklittlefs.path");
         } else { // ESP8266
             tool = findTool(arduinoContext, "runtime.tools.mklittlefs");
         }
         if (tool) {
             mklittlefs = tool + "/" + mklittlefs;
+        } else {
+            writeEmitter.fire("ERROR: mklittlefs not found!\r\n");
         }
 
         // TBD - add non-serial UF2 upload via OpenOCD
@@ -189,6 +236,8 @@ export function activate(context: vscode.ExtensionContext) {
             python3Path = findTool(arduinoContext, "runtime.tools.pqt-python3");
         } else if (esp8266) {
             python3Path = findTool(arduinoContext, "runtime.tools.python3");
+        } else if (esp32) {
+            python3Path = findTool(arduinoContext, "runtime.tools.python3.path");
         }
         if (python3Path) {
             python3 = python3Path + "/" + python3;
@@ -213,6 +262,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Upload stage differs per core
         let uploadOpts : any[] = [];
+        let cmdApp = python3;
         if (pico) {
             let uf2conv = "tools/uf2conv.py";
             let uf2Path = findTool(arduinoContext, "runtime.platform.path");
@@ -220,7 +270,19 @@ export function activate(context: vscode.ExtensionContext) {
                 uf2conv = uf2Path + "/" + uf2conv;
             }
             uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
-        } else {
+        } else if (esp32) {
+            let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
+            let flashFreq = arduinoContext.boardDetails.buildProperties["build.flash_freq"];
+            let espTool = "esptool" + ext;
+            let espToolPath = findTool(arduinoContext, "runtime.tools.esptool_py.path");
+            if (espToolPath) {
+                espTool = espToolPath + "/" + espTool;
+            }
+            cmdApp = espTool;
+            uploadOpts = ["--chip", "esp32", "--port", serialPort, "--baud", String(uploadSpeed),
+                "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
+                "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
+        } else { // esp8266
             let upload = "tools/upload.py";
             let uploadPath = findTool(arduinoContext, "runtime.platform.path");
             if (uploadPath) {
@@ -230,9 +292,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         writeEmitter.fire("\r\n\r\nUploading LittleFS filesystem\r\n");
-        writeEmitter.fire(python3 + " " + uploadOpts.join(" ") + "\r\n");
+        writeEmitter.fire(cmdApp + " " + uploadOpts.join(" ") + "\r\n");
 
-        exitCode = await runCommand(python3, uploadOpts);
+        exitCode = await runCommand(cmdApp, uploadOpts);
         if (exitCode) {
             writeEmitter.fire("ERROR:  Upload failed, error code: " + String(exitCode) + "\r\n\r\n");
             return;

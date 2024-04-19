@@ -3,13 +3,13 @@
 
 MIT licensed, see LICENSE.md
 
-LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico) and the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino).
+LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico), the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino) and [ESP32](https://github.com/espressif/arduino-esp32).
 
 ## Usage
 
-`[Ctrl]` + `[Shift]` + `[P]`, then "`Upload LittleFS to Pico/ESP8266`".
+`[Ctrl]` + `[Shift]` + `[P]`, then "`Upload LittleFS to Pico/ESP8266/ESP32`".
 
-On macOS, press `[⌘]` + `[Shift]` + `[P]` to open the Command Palette in the Arduino IDE, then "`Upload LittleFS to Pico/ESP8266`".
+On macOS, press `[⌘]` + `[Shift]` + `[P]` to open the Command Palette in the Arduino IDE, then "`Upload LittleFS to Pico/ESP8266/ESP32`".
 
 ## Glitches
 
@@ -18,6 +18,11 @@ To work around this, you can change the board once (to anything) and then change
 You can also open another sketch, close the auto-opened one, then re-open it.
 
 A fix is already in the Arduino repository for this issue.
+
+If you get: 
+`A fatal error occurred: Could not open <serial port>, the port doesn't exist`
+`ERROR:  Upload failed, error code: 2`
+Make sure that you close an open `Serial Monitor` windows.
 
 ## Installation
 
