@@ -19,10 +19,12 @@ You can also open another sketch, close the auto-opened one, then re-open it.
 
 A fix is already in the Arduino repository for this issue.
 
-If you get: 
-`A fatal error occurred: Could not open <serial port>, the port doesn't exist`
-`ERROR:  Upload failed, error code: 2`
-Make sure that you close an open `Serial Monitor` windows.
+If you get:
+```
+A fatal error occurred: Could not open <serial port>, the port doesn't exist
+ERROR:  Upload failed, error code: 2
+```
+Make sure that you close any open `Serial Monitor` windows.
 
 ## Installation
 
