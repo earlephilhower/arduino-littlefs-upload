@@ -287,6 +287,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (platform() === 'win32') {
                 cmdApp = espTool; // Have binary EXE on Win32
             } else {
+                cmdApp = "python3"; // Not shipped, assumed installed
                 uploadOpts.unshift(espTool); // Need to call Python3
             }
         } else { // esp8266
