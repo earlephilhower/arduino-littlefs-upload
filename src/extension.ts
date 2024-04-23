@@ -104,6 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
         let pico = false;
         let esp8266 = false;
         let esp32 = false;
+        let esp32variant = "";
         switch (arduinoContext.fqbn.split(':')[1]) {
             case "rp2040": {
                 pico = true;
@@ -115,6 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             case "esp32": {
                 esp32 = true;
+                esp32variant = arduinoContext.fqbn.split(':')[2];
                 break;
             }
             default: {
@@ -279,7 +281,7 @@ export function activate(context: vscode.ExtensionContext) {
                 espTool = espToolPath + "/" + espTool;
             }
             cmdApp = espTool;
-            uploadOpts = ["--chip", "esp32", "--port", serialPort, "--baud", String(uploadSpeed),
+            uploadOpts = ["--chip", esp32variant, "--port", serialPort, "--baud", String(uploadSpeed),
                 "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
                 "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
         } else { // esp8266
