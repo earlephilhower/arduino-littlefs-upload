@@ -120,7 +120,7 @@ export function activate(context: vscode.ExtensionContext) {
                 break;
             }
             default: {
-                writeEmitter.fire("ERROR: Only Arduino-Pico RP2040 and ESP8266 supported.\r\n");
+                writeEmitter.fire("ERROR: Only Arduino-Pico RP2040, ESP32, and ESP8266 supported.\r\n");
                 return;
             }
         }
