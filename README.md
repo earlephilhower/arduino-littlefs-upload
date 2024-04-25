@@ -3,7 +3,7 @@
 
 MIT licensed, see LICENSE.md
 
-LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico), the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino) and [ESP32](https://github.com/espressif/arduino-esp32).
+LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico), the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino) and the community [ESP32 Arduino code](https://github.com/espressif/arduino-esp32).
 
 ## Usage
 
