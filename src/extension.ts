@@ -203,7 +203,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Windows exes need ".exe" suffix
         let ext = (platform() === 'win32') ? ".exe" : "";
-        let extEspTool = (platform() === 'win32') ? ".exe" : ((platform() === "darwin") ? "" :  ".py");
+        let extEspTool = (platform() === 'win32') ? ".exe" : ((platform() === 'darwin') ? "" :  ".py");
         let mklittlefs = "mklittlefs" + ext;
 
         let tool = undefined;
