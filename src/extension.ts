@@ -203,7 +203,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Windows exes need ".exe" suffix
         let ext = (platform() === 'win32') ? ".exe" : "";
-        let extEspTool = (platform() === 'win32') ? ".exe" : ".py";
+        let extEspTool = (platform() === 'win32') ? ".exe" : ((platform() === "darwin") ? "" :  ".py");
         let mklittlefs = "mklittlefs" + ext;
 
         let tool = undefined;
@@ -284,10 +284,10 @@ export function activate(context: vscode.ExtensionContext) {
             uploadOpts = ["--chip", esp32variant, "--port", serialPort, "--baud", String(uploadSpeed),
                 "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
                 "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
-            if (platform() === 'win32') {
-                cmdApp = espTool; // Have binary EXE on Win32
+            if ((platform() === 'win32') || (platform() === 'darwin')) {
+                cmdApp = espTool; // Have binary EXE on Mac/Windows
             } else {
-                cmdApp = "python3"; // Not shipped, assumed installed
+                cmdApp = "python3"; // Not shipped, assumed installed on Linux
                 uploadOpts.unshift(espTool); // Need to call Python3
             }
         } else { // esp8266
