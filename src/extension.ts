@@ -116,7 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
             case "esp32": {
                 esp32 = true;
-                esp32variant = arduinoContext.fqbn.split(':')[2];
+                esp32variant = arduinoContext.boardDetails.buildProperties['build.mcu'];
                 break;
             }
             default: {
