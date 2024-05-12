@@ -1,14 +1,14 @@
 {
-  "name": "arduino-littlefs-upload",
-  "displayName": "arduino-littlefs-upload",
-  "description": "Build and uploads LittleFS filesystems for the Arduino-Pico RP2040 core, ESP8266 core or ESP32 core under Arduino IDE 2.2.1 or higher",
+  "name": "arduino-spiffs-upload",
+  "displayName": "arduino-spiffs-upload",
+  "description": "Build and uploads spiffs filesystems for the Arduino-Pico RP2040 core, ESP8266 core or ESP32 core under Arduino IDE 2.2.1 or higher",
   "version": "1.1.5",
   "engines": {
     "vscode": "^1.82.0"
   },
   "license": "MIT",
   "repository": {
-    "url": "https://github.com/earlephilhower/arduino-littlefs-upload"
+    "url": "https://github.com/espx-cz/arduino-spiffs-upload"
   },
   "categories": [
     "Other"
@@ -18,8 +18,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "arduino-littlefs-upload.uploadLittleFS",
-        "title": "Upload LittleFS to Pico/ESP8266/ESP32"
+        "command": "arduino-spiffs-upload.uploadSPIFFS",
+        "title": "Upload SPIFFS to Pico/ESP8266/ESP32"
       }
     ]
   },

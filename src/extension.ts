@@ -66,17 +66,17 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     // Register the command
-    const disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', async () => {
+    const disposable = vscode.commands.registerCommand('arduino-spiffs-upload.uploadSPIFFS', async () => {
 
-        //let str = JSON.stringify(arduinoContext, null, 4);
-        //console.log(str);
+        let str = JSON.stringify(arduinoContext, null, 4);
+        console.log(str);
 
         if ((arduinoContext.boardDetails === undefined) ||  (arduinoContext.fqbn === undefined)){
             vscode.window.showErrorMessage("Board details not available. Compile the sketch once.");
             return;
         }
 
-        makeTerminal("LittleFS Upload");
+        makeTerminal("SPIFFS Upload");
 
         // Wait for the terminal to become active.
         let cnt = 0;
@@ -91,7 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
         // Clear the terminal
         writeEmitter.fire('\x1b[2J\x1b[3J\x1b[;H');
 
-        writeEmitter.fire("LittleFS Filesystem Uploader\r\n\r\n");
+        writeEmitter.fire("SPIFFS Filesystem Uploader\r\n\r\n");
 
         // Need to have a data folder present, or this isn't gonna work...
         let dataFolder = arduinoContext.sketchPath + "/data";
@@ -204,20 +204,20 @@ export function activate(context: vscode.ExtensionContext) {
         // Windows exes need ".exe" suffix
         let ext = (platform() === 'win32') ? ".exe" : "";
         let extEspTool = (platform() === 'win32') ? ".exe" : ((platform() === 'darwin') ? "" :  ".py");
-        let mklittlefs = "mklittlefs" + ext;
+        let mkspiffs = "mkspiffs" + ext;
 
         let tool = undefined;
         if (pico) {
-            tool = findTool(arduinoContext, "runtime.tools.pqt-mklittlefs");
+            tool = findTool(arduinoContext, "runtime.tools.pqt-mkspiffs");
         } else if (esp32) {
-            tool = findTool(arduinoContext, "runtime.tools.mklittlefs.path");
+            tool = findTool(arduinoContext, "runtime.tools.mkspiffs.path");
         } else { // ESP8266
-            tool = findTool(arduinoContext, "runtime.tools.mklittlefs");
+            tool = findTool(arduinoContext, "runtime.tools.mkspiffs");
         }
         if (tool) {
-            mklittlefs = tool + "/" + mklittlefs;
+            mkspiffs = tool + "/" + mkspiffs;
         } else {
-            writeEmitter.fire("ERROR: mklittlefs not found!\r\n");
+            writeEmitter.fire("ERROR: mkspiffs not found!\r\n");
         }
 
         // TBD - add non-serial UF2 upload via OpenOCD
@@ -249,17 +249,17 @@ export function activate(context: vscode.ExtensionContext) {
         // We can't always know where the compile path is, so just use a temp name
         const tmp = require('tmp');
         tmp.setGracefulCleanup();
-        let imageFile = tmp.tmpNameSync({postfix: ".littlefs.bin"});
+        let imageFile = tmp.tmpNameSync({postfix: ".spiffs.bin"});
 
         let buildOpts =  ["-c", dataFolder, "-p", String(page), "-b", String(blocksize), "-s", String(fsEnd - fsStart), imageFile];
 
-        // All mklittlefs take the same options, so run in common
-        writeEmitter.fire("Building LittleFS filesystem\r\n");
-        writeEmitter.fire(mklittlefs + " " + buildOpts.join(" ") + "\r\n");
+        // All mkspiffs take the same options, so run in common
+        writeEmitter.fire("Building SPIFFS filesystem\r\n");
+        writeEmitter.fire(mkspiffs + " " + buildOpts.join(" ") + "\r\n");
 
-        let exitCode = await runCommand(mklittlefs, buildOpts);
+        let exitCode = await runCommand(mkspiffs, buildOpts);
         if (exitCode) {
-            writeEmitter.fire("ERROR:  Mklittlefs failed, error code: " + String(exitCode) + "\r\n\r\n");
+            writeEmitter.fire("ERROR:  Mkspiffs failed, error code: " + String(exitCode) + "\r\n\r\n");
             return;
         }
 
@@ -299,7 +299,7 @@ export function activate(context: vscode.ExtensionContext) {
             uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
         }
 
-        writeEmitter.fire("\r\n\r\nUploading LittleFS filesystem\r\n");
+        writeEmitter.fire("\r\n\r\nUploading SPIFFS filesystem\r\n");
         writeEmitter.fire(cmdApp + " " + uploadOpts.join(" ") + "\r\n");
 
         exitCode = await runCommand(cmdApp, uploadOpts);
@@ -309,7 +309,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         writeEmitter.fire("\r\n\Completed upload.\r\n\r\n");
-        vscode.window.showInformationMessage("LittleFS upload completed!");
+        vscode.window.showInformationMessage("SPIFFS upload completed!");
       });
       context.subscriptions.push(disposable);
 }

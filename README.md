@@ -1,15 +1,17 @@
-# arduino-littlefs-upload README
-(C) 2023 Earle F. Philhower, III
+# arduino-spiffs-upload README
+
+
+Based on arduino-littlefs-uploader by (C) 2023 Earle F. Philhower, III
 
 MIT licensed, see LICENSE.md
 
-LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico), the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino) and the community [ESP32 Arduino core](https://github.com/espressif/arduino-esp32).
+SPIFFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico), the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino) and the community [ESP32 Arduino core](https://github.com/espressif/arduino-esp32).
 
 ## Usage
 
-`[Ctrl]` + `[Shift]` + `[P]`, then "`Upload LittleFS to Pico/ESP8266/ESP32`".
+`[Ctrl]` + `[Shift]` + `[P]`, then "`Upload SPIFFS to Pico/ESP8266/ESP32`".
 
-On macOS, press `[⌘]` + `[Shift]` + `[P]` to open the Command Palette in the Arduino IDE, then "`Upload LittleFS to Pico/ESP8266/ESP32`".
+On macOS, press `[⌘]` + `[Shift]` + `[P]` to open the Command Palette in the Arduino IDE, then "`Upload SPIFFS to Pico/ESP8266/ESP32`".
 
 ## Glitches
 
@@ -28,4 +30,4 @@ Make sure that you close any open `Serial Monitor` windows.
 
 ## Installation
 
-Copy the [VSIX file](https://github.com/earlephilhower/arduino-littlefs-upload/releases) to `~/.arduinoIDE/plugins/` on Mac and Linux or `C:\Users\<username>\.arduinoIDE\plugins\` on Windows (you may need to make this directory yourself beforehand). Restart the IDE.
+Copy the [VSIX file](https://github.com/espx-cz/arduino-spiffs-upload/releases) to `~/.arduinoIDE/plugins/` on Mac and Linux or `C:\Users\<username>\.arduinoIDE\plugins\` on Windows (you may need to make this directory yourself beforehand). Restart the IDE.
