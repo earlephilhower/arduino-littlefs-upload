@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import type { ArduinoContext } from 'vscode-arduino-api';
+import type { ArduinoContext, BoardDetails } from 'vscode-arduino-api';
 import { platform } from 'node:os';
 import { spawn } from 'child_process';
+import * as path from 'node:path';
 
 const writeEmitter = new vscode.EventEmitter<string>();
 let writerReady : boolean = false;
@@ -54,6 +55,66 @@ async function runCommand(exe : string, opts : any[]) {
         cmd.on('close', resolve);
     });
     return exitCode;
+}
+
+function getSelectedPartitionScheme(boardDetails : BoardDetails) : string | undefined {
+    const partitionSchemeOptions = boardDetails.configOptions.find(option => option.option === "PartitionScheme");
+    if (partitionSchemeOptions === undefined) {
+        writeEmitter.fire("ERROR: Failed to read partition scheme options\r\n");
+        return;
+    }
+
+    const selectedOption = partitionSchemeOptions.values.find(value => value.selected === true);
+    if (selectedOption === undefined) {
+        writeEmitter.fire("ERROR: No partition scheme selected\r\n");
+        return;
+    }
+
+    return selectedOption.value;
+}
+
+function getDefaultPartitionScheme(boardDetails : BoardDetails) : string | undefined {
+    // Default partition is in the key build.partitions
+    let partitions = boardDetails.buildProperties["build.partitions"];
+    if (!partitions) {
+        writeEmitter.fire("ERROR: Partitions not defined for this ESP32 board\r\n");
+    }
+
+    return partitions;
+}
+
+function getPartitionSchemeFile(arduinoContext : ArduinoContext) {
+    if (arduinoContext.sketchPath !== undefined) {
+        let localPartitionsFile = arduinoContext.sketchPath + path.sep + "partitions.csv";
+        if (fs.existsSync(localPartitionsFile)) {
+            writeEmitter.fire("Using sketch partitions.csv\r\n");
+            return localPartitionsFile;
+        }
+    }
+
+    if (arduinoContext.boardDetails === undefined) {
+        // This should never happen from the state in which this is called.
+        writeEmitter.fire("ERROR: Board details is undefined\r\n");
+        return;
+    }
+
+    let selectedScheme = getSelectedPartitionScheme(arduinoContext.boardDetails);
+    if (selectedScheme === undefined) {
+        writeEmitter.fire("WARNING: Falling back on the board default\r\n");
+        selectedScheme = getDefaultPartitionScheme(arduinoContext.boardDetails);
+        if (selectedScheme === undefined) {
+            writeEmitter.fire("ERROR: No board partition scheme found\r\n");
+            return;
+        }
+    }
+
+    // Selected Partition is the filename.csv in the partitions directory
+    writeEmitter.fire("Using partition: ");
+    writeEmitter.fire(selectedScheme);
+    writeEmitter.fire("\r\n");
+
+    let platformPath = arduinoContext.boardDetails.buildProperties["runtime.platform.path"];
+    return platformPath + "/tools/partitions/" + selectedScheme + ".csv";
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -132,18 +193,11 @@ export function activate(context: vscode.ExtensionContext) {
         let blocksize = 0;
         let uploadSpeed = 115200; // ESP8266-only
         if (esp32) {
-            // Selected partition is in the key build.partitions
-            let partitions = arduinoContext.boardDetails.buildProperties["build.partitions"];
-            if (!partitions) {
-                writeEmitter.fire("ERROR: Partitions not defined for this ESP32 board\r\n");
+            const partitionFile = getPartitionSchemeFile(arduinoContext);
+            if (partitionFile === undefined) {
+                writeEmitter.fire("ERROR: No partition file selected\r\n");
                 return;
             }
-            // Selected Partition is the filename.csv in the partitions directory
-            writeEmitter.fire("Using partition: ");
-            writeEmitter.fire(partitions);
-            writeEmitter.fire("\r\n");
-            let platformPath = arduinoContext.boardDetails.buildProperties["runtime.platform.path"];
-            let partitionFile = platformPath + "/tools/partitions/" + partitions + ".csv";
             if (!fs.existsSync(partitionFile)) {
                 writeEmitter.fire("ERROR: Partition file not found!\r\n");
                 writeEmitter.fire(partitionFile);
