@@ -26,6 +26,21 @@ function makeTerminal(title : string) {
     terminal.show();
 }
 
+async function waitForTerminal(title : string) {
+    makeTerminal("LittleFS Upload");
+
+    // Wait for the terminal to become active.
+    let cnt = 0;
+    while (!writerReady) {
+        if (cnt++ >= 50) { // Give it 5 seconds and then give up
+            return false;
+        }
+        await new Promise( resolve => setTimeout(resolve, 100) );
+    }
+
+    return true;
+}
+
 function findTool(ctx: ArduinoContext, match : string) : string | undefined {
     let found = false;
     let ret = undefined;
@@ -137,16 +152,8 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        makeTerminal("LittleFS Upload");
-
-        // Wait for the terminal to become active.
-        let cnt = 0;
-        while (!writerReady) {
-            if (cnt++ >= 50) { // Give it 5 seconds and then give up
-                vscode.window.showErrorMessage("Unable to open upload terminal");
-                return;
-            }
-            await new Promise( resolve => setTimeout(resolve, 100) );
+        if (!await waitForTerminal("LittleFS Upload")) {
+            vscode.window.showErrorMessage("Unable to open upload terminal");
         }
 
         // Clear the terminal
@@ -216,13 +223,13 @@ export function activate(context: vscode.ExtensionContext) {
                 writeEmitter.fire("ERROR: Partition entry not found in csv file!\r\n");
                 return;
             }
-            
+
             uploadSpeed = Number(arduinoContext.boardDetails.buildProperties["upload.speed"]);
             // Fixed for ESP32
             page = 256;
             blocksize = 4096;
         }
-        
+
         arduinoContext.boardDetails.configOptions.forEach( (opt) => {
             let optSeek = pico ? "flash" : "eesz";
             let startMarker = pico ? "fs_start" : "spiffs_start";
@@ -364,6 +371,27 @@ export function activate(context: vscode.ExtensionContext) {
 
         writeEmitter.fire("\r\n\Completed upload.\r\n\r\n");
         vscode.window.showInformationMessage("LittleFS upload completed!");
+      });
+
+      const findFile = vscode.commands.registerCommand('arduino-littlefs-upload.findPartitionFile', async () => {
+        if ((arduinoContext.boardDetails === undefined) ||  (arduinoContext.fqbn === undefined)){
+            vscode.window.showErrorMessage("Board details not available. Compile the sketch once.");
+            return;
+        }
+
+        if (!await waitForTerminal("Partition Scheme")) {
+            vscode.window.showErrorMessage("Unable to open terminal");
+        }
+
+        const partitionFile = getPartitionSchemeFile(arduinoContext);
+        if (partitionFile === undefined) {
+            writeEmitter.fire("Failed to find partition scheme file\r\n");
+        }
+        else {
+            writeEmitter.fire("Partition scheme file: ");
+            writeEmitter.fire(partitionFile);
+            writeEmitter.fire("\r\n");
+        }
       });
       context.subscriptions.push(disposable);
 }
