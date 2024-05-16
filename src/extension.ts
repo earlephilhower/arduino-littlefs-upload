@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 import type { ArduinoContext } from 'vscode-arduino-api';
 import { platform } from 'node:os';
 import { spawn } from 'child_process';
@@ -38,6 +39,45 @@ function findTool(ctx: ArduinoContext, match : string) : string | undefined {
     }
     return ret;
 }
+
+
+// Taken from dankeboy32's esp-exception decoder.  Thanks!  https://github.com/dankeboy36/esp-exception-decoder
+const clear = '\x1b[2J\x1b[3J\x1b[;H';
+const resetStyle = '\x1b[0m';
+enum ANSIStyle {
+  'bold' = 1,
+  'red' = 31,
+  'green' = 32,
+  'blue' = 34,
+}
+
+function red(text: string): string {
+  return color(text, ANSIStyle.red);
+}
+
+function green(text: string, isBold = false): string {
+  return color(text, ANSIStyle.green, isBold);
+}
+
+function blue(text: string, isBold = false): string {
+  return color(text, ANSIStyle.blue, isBold);
+}
+
+function bold(text: string): string {
+  return `\x1b[${ANSIStyle.bold}m${text}${resetStyle}`;
+}
+
+function color(
+  text: string,
+  foregroundColor: ANSIStyle,
+  isBold = false
+): string {
+  return `\x1b[${foregroundColor}${
+    isBold ? `;${ANSIStyle.bold}` : ''
+  }m${text}${resetStyle}`;
+}
+
+
 
 // Execute a command and display it's output in the terminal
 async function runCommand(exe : string, opts : any[]) {
@@ -89,14 +129,16 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         // Clear the terminal
-        writeEmitter.fire('\x1b[2J\x1b[3J\x1b[;H');
+        writeEmitter.fire(clear + resetStyle);
 
-        writeEmitter.fire("LittleFS Filesystem Uploader\r\n\r\n");
+        writeEmitter.fire(bold("LittleFS Filesystem Uploader v" + String(context.extension.packageJSON.version) + " -- https://github.com/earlephilhower/arduino-littlefs-upload\r\n\r\n"));
 
+        writeEmitter.fire(blue(" Sketch Path: ") + green("" + arduinoContext.sketchPath) + "\r\n");
         // Need to have a data folder present, or this isn't gonna work...
-        let dataFolder = arduinoContext.sketchPath + "/data";
+        let dataFolder = arduinoContext.sketchPath + path.sep + "data";
+        writeEmitter.fire(blue("   Data Path: ") + green(dataFolder) + "\r\n");
         if (!fs.existsSync(dataFolder)) {
-            writeEmitter.fire("ERROR: No data folder found\r\n");
+            writeEmitter.fire(red("\r\n\r\nERROR: No data folder found at " + dataFolder) + "\r\n");
             return;
         }
 
@@ -107,20 +149,23 @@ export function activate(context: vscode.ExtensionContext) {
         let esp32variant = "";
         switch (arduinoContext.fqbn.split(':')[1]) {
             case "rp2040": {
+                writeEmitter.fire(blue("      Device: ") + green("RP2040 series") + "\r\n");
                 pico = true;
                 break;
             }
             case "esp8266": {
+                writeEmitter.fire(blue("      Device: ") + green("ESP8266 series") + "\r\n");
                 esp8266 = true;
                 break;
             }
             case "esp32": {
                 esp32 = true;
                 esp32variant = arduinoContext.boardDetails.buildProperties['build.mcu'];
+                writeEmitter.fire(blue("      Device: ") + green("ESP32 series, model " + esp32variant) + "\r\n");
                 break;
             }
             default: {
-                writeEmitter.fire("ERROR: Only Arduino-Pico RP2040, ESP32, and ESP8266 supported.\r\n");
+                writeEmitter.fire(red("\r\n\r\nERROR: Only Arduino-Pico RP2040, ESP32, and ESP8266 supported.\r\n"));
                 return;
             }
         }
@@ -135,18 +180,16 @@ export function activate(context: vscode.ExtensionContext) {
             // Selected partition is in the key build.partitions
             let partitions = arduinoContext.boardDetails.buildProperties["build.partitions"];
             if (!partitions) {
-                writeEmitter.fire("ERROR: Partitions not defined for this ESP32 board\r\n");
+                writeEmitter.fire(red("\r\n\r\nERROR: Partitions not defined for this ESP32 board\r\n"));
                 return;
             }
             // Selected Partition is the filename.csv in the partitions directory
-            writeEmitter.fire("Using partition: ");
-            writeEmitter.fire(partitions);
-            writeEmitter.fire("\r\n");
+            writeEmitter.fire(blue("Using partition: ") + green(partitions) + "\r\n");
             let platformPath = arduinoContext.boardDetails.buildProperties["runtime.platform.path"];
-            let partitionFile = platformPath + "/tools/partitions/" + partitions + ".csv";
+            let partitionFile = platformPath + path.sep + "tools" + path.sep + "partitions" + path.sep + partitions + ".csv";
+            writeEmitter.fire(blue("  Partitions: ") + green(partitionFile) + "\r\n");
             if (!fs.existsSync(partitionFile)) {
-                writeEmitter.fire("ERROR: Partition file not found!\r\n");
-                writeEmitter.fire(partitionFile);
+                writeEmitter.fire(red("\r\n\r\nERROR: Partition file not found!\r\n"));
                 return;
             }
             let partitionData = fs.readFileSync(partitionFile, 'utf8');
@@ -159,7 +202,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             }
             if (!fsStart || !fsEnd) {
-                writeEmitter.fire("ERROR: Partition entry not found in csv file!\r\n");
+                writeEmitter.fire(red("\r\n\r\nERROR: Partition entry not found in csv file!\r\n"));
                 return;
             }
             
@@ -197,7 +240,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         });
         if (!fsStart || !fsEnd || !page || !blocksize || (fsEnd <= fsStart)) {
-            writeEmitter.fire("ERROR: No filesystem specified, check flash size menu\r\n");
+            writeEmitter.fire(red("\r\n\r\nERROR: No filesystem specified, check flash size menu\r\n"));
             return;
         }
 
@@ -215,21 +258,21 @@ export function activate(context: vscode.ExtensionContext) {
             tool = findTool(arduinoContext, "runtime.tools.mklittlefs");
         }
         if (tool) {
-            mklittlefs = tool + "/" + mklittlefs;
+            mklittlefs = tool + path.sep + mklittlefs;
         } else {
-            writeEmitter.fire("ERROR: mklittlefs not found!\r\n");
+            writeEmitter.fire(red("\r\n\r\nERROR: mklittlefs not found!\r\n" + resetStyle));
         }
 
         // TBD - add non-serial UF2 upload via OpenOCD
         let serialPort = "";
         if (arduinoContext.port?.address === undefined) {
-            writeEmitter.fire("ERROR: No port specified, check IDE menus.\r\n");
+            writeEmitter.fire(red("\r\n\r\nERROR: No port specified, check IDE menus.\r\n"));
             return;
         } else {
             serialPort = arduinoContext.port?.address;
         }
         if (arduinoContext.port?.protocol !== "serial") {
-            writeEmitter.fire("ERROR: Only serial port upload supported at this time.\r\n");
+            writeEmitter.fire(red("\r\n\r\nERROR: Only serial port upload supported at this time.\r\n"));
             return;
         }
 
@@ -243,7 +286,7 @@ export function activate(context: vscode.ExtensionContext) {
             python3Path = findTool(arduinoContext, "runtime.tools.python3.path");
         }
         if (python3Path) {
-            python3 = python3Path + "/" + python3;
+            python3 = python3Path + path.sep + python3;
         }
 
         // We can't always know where the compile path is, so just use a temp name
@@ -254,12 +297,12 @@ export function activate(context: vscode.ExtensionContext) {
         let buildOpts =  ["-c", dataFolder, "-p", String(page), "-b", String(blocksize), "-s", String(fsEnd - fsStart), imageFile];
 
         // All mklittlefs take the same options, so run in common
-        writeEmitter.fire("Building LittleFS filesystem\r\n");
-        writeEmitter.fire(mklittlefs + " " + buildOpts.join(" ") + "\r\n");
+        writeEmitter.fire(bold("\r\nBuilding LittleFS filesystem\r\n"));
+        writeEmitter.fire(blue("Command Line: ") + green(mklittlefs + " " + buildOpts.join(" ")) + "\r\n");
 
         let exitCode = await runCommand(mklittlefs, buildOpts);
         if (exitCode) {
-            writeEmitter.fire("ERROR:  Mklittlefs failed, error code: " + String(exitCode) + "\r\n\r\n");
+            writeEmitter.fire(red("\r\n\r\nERROR:  Mklittlefs failed, error code: " + String(exitCode) + "\r\n\r\n"));
             return;
         }
 
@@ -267,10 +310,10 @@ export function activate(context: vscode.ExtensionContext) {
         let uploadOpts : any[] = [];
         let cmdApp = python3;
         if (pico) {
-            let uf2conv = "tools/uf2conv.py";
+            let uf2conv = "tools" + path.sep + "uf2conv.py";
             let uf2Path = findTool(arduinoContext, "runtime.platform.path");
             if (uf2Path) {
-                uf2conv = uf2Path + "/" + uf2conv;
+                uf2conv = uf2Path + path.sep + uf2conv;
             }
             uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
         } else if (esp32) {
@@ -279,7 +322,7 @@ export function activate(context: vscode.ExtensionContext) {
             let espTool = "esptool" + extEspTool;
             let espToolPath = findTool(arduinoContext, "runtime.tools.esptool_py.path");
             if (espToolPath) {
-                espTool = espToolPath + "/" + espTool;
+                espTool = espToolPath + path.sep + espTool;
             }
             uploadOpts = ["--chip", esp32variant, "--port", serialPort, "--baud", String(uploadSpeed),
                 "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
@@ -291,24 +334,24 @@ export function activate(context: vscode.ExtensionContext) {
                 uploadOpts.unshift(espTool); // Need to call Python3
             }
         } else { // esp8266
-            let upload = "tools/upload.py";
+            let upload = "tools" + path.sep + "upload.py";
             let uploadPath = findTool(arduinoContext, "runtime.platform.path");
             if (uploadPath) {
-                upload = uploadPath + "/" + upload;
+                upload = uploadPath + path.sep + upload;
             }
             uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
         }
 
-        writeEmitter.fire("\r\n\r\nUploading LittleFS filesystem\r\n");
-        writeEmitter.fire(cmdApp + " " + uploadOpts.join(" ") + "\r\n");
+        writeEmitter.fire(bold("\r\nUploading LittleFS filesystem\r\n"));
+        writeEmitter.fire(blue("Command Line: ") + green(cmdApp + " " + uploadOpts.join(" ") + "\r\n"));
 
         exitCode = await runCommand(cmdApp, uploadOpts);
         if (exitCode) {
-            writeEmitter.fire("ERROR:  Upload failed, error code: " + String(exitCode) + "\r\n\r\n");
+            writeEmitter.fire(red("\r\n\r\nERROR:  Upload failed, error code: " + String(exitCode) + "\r\n\r\n"));
             return;
         }
 
-        writeEmitter.fire("\r\n\Completed upload.\r\n\r\n");
+        writeEmitter.fire(bold("\r\nCompleted upload.\r\n\r\n"));
         vscode.window.showInformationMessage("LittleFS upload completed!");
       });
       context.subscriptions.push(disposable);
