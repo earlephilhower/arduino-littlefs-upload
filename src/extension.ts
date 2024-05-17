@@ -27,7 +27,7 @@ function makeTerminal(title : string) {
 }
 
 async function waitForTerminal(title : string) {
-    makeTerminal("LittleFS Upload");
+    makeTerminal(title);
 
     // Wait for the terminal to become active.
     let cnt = 0;
