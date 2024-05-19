@@ -11,8 +11,6 @@ LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the 
 
 On macOS, press `[⌘]` + `[Shift]` + `[P]` to open the Command Palette in the Arduino IDE, then "`Upload LittleFS to Pico/ESP8266/ESP32`".
 
-Additionally, the active partitions file can be located with the Command Palette command "`Find Partition File`".
-
 ## Glitches
 
 The first sketch auto-opened by the IDE presently may have corrupted state which causes uploads to fail.

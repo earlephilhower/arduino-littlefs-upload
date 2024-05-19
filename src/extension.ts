@@ -414,25 +414,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage("LittleFS upload completed!");
       });
 
-      const findFile = vscode.commands.registerCommand('arduino-littlefs-upload.findPartitionFile', async () => {
-        if ((arduinoContext.boardDetails === undefined) ||  (arduinoContext.fqbn === undefined)){
-            vscode.window.showErrorMessage("Board details not available. Compile the sketch once.");
-            return;
-        }
-
-        if (!await waitForTerminal("Partition Scheme")) {
-            vscode.window.showErrorMessage("Unable to open terminal");
-        }
-
-        const partitionFile = getPartitionSchemeFile(arduinoContext);
-        if (partitionFile === undefined) {
-            writeEmitter.fire(red("\r\n\r\nError: Failed to find partition scheme file\r\n"));
-            return;
-        }
-
-        writeEmitter.fire(blue("Partition scheme file: ") + green(partitionFile) + "\r\n");
-      });
-      context.subscriptions.push(disposable, findFile);
+      context.subscriptions.push(disposable);
 }
 
 export function deactivate() { }
