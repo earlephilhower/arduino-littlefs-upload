@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { ArduinoContext } from 'vscode-arduino-api';
+import type { ArduinoContext, BoardDetails } from 'vscode-arduino-api';
 import { platform } from 'node:os';
 import { spawn } from 'child_process';
 
@@ -24,6 +24,21 @@ function makeTerminal(title : string) {
     };
     const terminal = (<any>vscode.window).createTerminal({name: title, pty});
     terminal.show();
+}
+
+async function waitForTerminal(title : string) {
+    makeTerminal(title);
+
+    // Wait for the terminal to become active.
+    let cnt = 0;
+    while (!writerReady) {
+        if (cnt++ >= 50) { // Give it 5 seconds and then give up
+            return false;
+        }
+        await new Promise( resolve => setTimeout(resolve, 100) );
+    }
+
+    return true;
 }
 
 function findTool(ctx: ArduinoContext, match : string) : string | undefined {
@@ -96,6 +111,63 @@ async function runCommand(exe : string, opts : any[]) {
     return exitCode;
 }
 
+function getSelectedPartitionScheme(boardDetails : BoardDetails) : string | undefined {
+    const partitionSchemeOptions = boardDetails.configOptions.find(option => option.option === "PartitionScheme");
+    if (partitionSchemeOptions === undefined) {
+        writeEmitter.fire(red("\r\n\r\nERROR: Failed to read partition scheme options\r\n"));
+        return;
+    }
+
+    const selectedOption = partitionSchemeOptions.values.find(value => value.selected === true);
+    if (selectedOption === undefined) {
+        writeEmitter.fire(red("\r\n\r\nERROR: No partition scheme selected\r\n"));
+        return;
+    }
+
+    return selectedOption.value;
+}
+
+function getDefaultPartitionScheme(boardDetails : BoardDetails) : string | undefined {
+    // Default partition is in the key build.partitions
+    let partitions = boardDetails.buildProperties["build.partitions"];
+    if (!partitions) {
+        writeEmitter.fire(red("\r\n\r\nERROR: Partitions not defined for this ESP32 board\r\n"));
+    }
+
+    return partitions;
+}
+
+function getPartitionSchemeFile(arduinoContext : ArduinoContext) {
+    if (arduinoContext.sketchPath !== undefined) {
+        let localPartitionsFile = arduinoContext.sketchPath + path.sep + "partitions.csv";
+        if (fs.existsSync(localPartitionsFile)) {
+            writeEmitter.fire(blue("Using partition: " + green("partitions.csv in sketch folder") + "\r\n"));
+            return localPartitionsFile;
+        }
+    }
+
+    if (arduinoContext.boardDetails === undefined) {
+        // This should never happen from the state in which this is called.
+        writeEmitter.fire(red("\r\n\r\nERROR: Board details is undefined\r\n"));
+        return;
+    }
+
+    let selectedScheme = getSelectedPartitionScheme(arduinoContext.boardDetails);
+    if (selectedScheme === undefined) {
+        selectedScheme = getDefaultPartitionScheme(arduinoContext.boardDetails);
+        if (selectedScheme === undefined) {
+            writeEmitter.fire(red("\r\n\r\nERROR: No board partition scheme found\r\n"));
+            return;
+        }
+    }
+
+    // Selected Partition is the filename.csv in the partitions directory
+    writeEmitter.fire(blue("Using partition: ") + green(selectedScheme) + "\r\n");
+
+    let platformPath = arduinoContext.boardDetails.buildProperties["runtime.platform.path"];
+    return platformPath + path.sep + "tools" + path.sep + "partitions" + path.sep + selectedScheme + ".csv";
+}
+
 export function activate(context: vscode.ExtensionContext) {
     // Get the Arduino info extension loaded
     const arduinoContext: ArduinoContext = vscode.extensions.getExtension('dankeboy36.vscode-arduino-api')?.exports;
@@ -116,16 +188,8 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        makeTerminal("LittleFS Upload");
-
-        // Wait for the terminal to become active.
-        let cnt = 0;
-        while (!writerReady) {
-            if (cnt++ >= 50) { // Give it 5 seconds and then give up
-                vscode.window.showErrorMessage("Unable to open upload terminal");
-                return;
-            }
-            await new Promise( resolve => setTimeout(resolve, 100) );
+        if (!await waitForTerminal("LittleFS Upload")) {
+            vscode.window.showErrorMessage("Unable to open upload terminal");
         }
 
         // Clear the terminal
@@ -177,16 +241,11 @@ export function activate(context: vscode.ExtensionContext) {
         let blocksize = 0;
         let uploadSpeed = 115200; // ESP8266-only
         if (esp32) {
-            // Selected partition is in the key build.partitions
-            let partitions = arduinoContext.boardDetails.buildProperties["build.partitions"];
-            if (!partitions) {
+            const partitionFile = getPartitionSchemeFile(arduinoContext);
+            if (partitionFile === undefined) {
                 writeEmitter.fire(red("\r\n\r\nERROR: Partitions not defined for this ESP32 board\r\n"));
                 return;
             }
-            // Selected Partition is the filename.csv in the partitions directory
-            writeEmitter.fire(blue("Using partition: ") + green(partitions) + "\r\n");
-            let platformPath = arduinoContext.boardDetails.buildProperties["runtime.platform.path"];
-            let partitionFile = platformPath + path.sep + "tools" + path.sep + "partitions" + path.sep + partitions + ".csv";
             writeEmitter.fire(blue("  Partitions: ") + green(partitionFile) + "\r\n");
             if (!fs.existsSync(partitionFile)) {
                 writeEmitter.fire(red("\r\n\r\nERROR: Partition file not found!\r\n"));
@@ -205,13 +264,13 @@ export function activate(context: vscode.ExtensionContext) {
                 writeEmitter.fire(red("\r\n\r\nERROR: Partition entry not found in csv file!\r\n"));
                 return;
             }
-            
+
             uploadSpeed = Number(arduinoContext.boardDetails.buildProperties["upload.speed"]);
             // Fixed for ESP32
             page = 256;
             blocksize = 4096;
         }
-        
+
         arduinoContext.boardDetails.configOptions.forEach( (opt) => {
             let optSeek = pico ? "flash" : "eesz";
             let startMarker = pico ? "fs_start" : "spiffs_start";
@@ -354,6 +413,7 @@ export function activate(context: vscode.ExtensionContext) {
         writeEmitter.fire(bold("\r\nCompleted upload.\r\n\r\n"));
         vscode.window.showInformationMessage("LittleFS upload completed!");
       });
+
       context.subscriptions.push(disposable);
 }
 
