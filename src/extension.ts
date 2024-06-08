@@ -290,7 +290,7 @@ export function activate(context: vscode.ExtensionContext) {
                         }
                     }
                 });
-            } else if (String(opt.option) === "baud") {
+            } else if ((String(opt.option) === "baud") || (String(opt.option) === "UploadSpeed")) {
                 opt.values.forEach( (itm) => {
                     if (itm.selected) {
                         uploadSpeed = Number(itm.value);
