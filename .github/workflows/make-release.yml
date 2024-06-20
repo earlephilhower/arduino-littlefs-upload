@@ -1,9 +1,11 @@
 name: Build all and make release on tag
 
 on:
-  push:
-    tags:
-    - '*'
+  workflow_dispatch:
+#  push:
+#    tags:
+#    - '*'
+
 
 jobs:
   build-vsix:
