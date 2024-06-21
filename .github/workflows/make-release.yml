@@ -6,26 +6,30 @@ on:
 #    tags:
 #    - '*'
 
-
 jobs:
   build-vsix:
     runs-on: ubuntu-20.04
     steps:
+
     - uses: actions/checkout@v4
       with:
         submodules: true
+
     - uses: actions/setup-node@v4
       with:
         node-version: 20
         cache: 'npm'
         cache-dependency-path: ./package-lock.json
-    - name: Install code
+
+    - name: Install NPM dependencies
       run: |
-             sudo snap install --classic code
+          npm install -g @vscode/vsce
+          npm install
+
     - name: Build VSIX
       run: |
-             rm -f *.vsix
-             vsce package
+          rm -f *.vsix
+          vsce package
 
     - name: Upload VSIX
       uses: actions/upload-artifact@v4
@@ -38,20 +42,27 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
+
     - uses: actions/checkout@v4
       with:
         submodules: true
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
         path: .
+
     - name: Renaming artifacts
       run: |
           rev=$(git rev-parse --short HEAD)
+          #ls -altR
           mkdir release
-          mkdir tmp && cd tmp && unzip ../arduino-littlefs-upload.vsix.zip/*zip && mv */*vsix ../release/. && cd .. && rm -rf tmp
+          cp ./arduino-littlefs-upload.vsix/arduino-littlefs-upload-*.vsix ./release/.
+          #mkdir tmp && cd tmp && unzip ../arduino-littlefs-upload.vsix.zip/*zip && mv */*vsix ../release/. && cd .. && rm -rf tmp
           ls -l release
+
     - name: Drafting release
       uses: ncipollo/release-action@v1
       with:
