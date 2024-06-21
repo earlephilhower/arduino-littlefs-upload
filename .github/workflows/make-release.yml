@@ -2,9 +2,9 @@ name: Build all and make release on tag
 
 on:
   workflow_dispatch:
-#  push:
-#    tags:
-#    - '*'
+  push:
+    tags:
+    - '*'
 
 jobs:
   build-vsix:
@@ -54,13 +54,11 @@ jobs:
       with:
         path: .
 
-    - name: Renaming artifacts
+    - name: Cleaning up VSIX
       run: |
           rev=$(git rev-parse --short HEAD)
-          #ls -altR
           mkdir release
           cp ./arduino-littlefs-upload.vsix/arduino-littlefs-upload-*.vsix ./release/.
-          #mkdir tmp && cd tmp && unzip ../arduino-littlefs-upload.vsix.zip/*zip && mv */*vsix ../release/. && cd .. && rm -rf tmp
           ls -l release
 
     - name: Drafting release
