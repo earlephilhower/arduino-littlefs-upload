@@ -337,8 +337,11 @@ export function activate(context: vscode.ExtensionContext) {
 
         let python3 = "python3" + ext;
         let python3Path = undefined;
+        let picotool = "picotool" + ext;
+        let picotoolPath = undefined;
         if (pico) {
             python3Path = findTool(arduinoContext, "runtime.tools.pqt-python3");
+            picotoolPath = findTool(arduinoContext, "runtime.tools.pqt-picotool");
         } else if (esp8266) {
             python3Path = findTool(arduinoContext, "runtime.tools.python3");
         } else if (esp32) {
@@ -346,6 +349,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
         if (python3Path) {
             python3 = python3Path + path.sep + python3;
+        }
+        if (picotoolPath) {
+            picotool = picotoolPath + path.sep + picotool;
         }
 
         // We can't always know where the compile path is, so just use a temp name
@@ -365,6 +371,25 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
+        let conversion = false
+        if (pico) {
+            if (Number(arduinoContext.boardDetails?.buildProperties['version'].split('.')[0]) > 3) {
+                // Pico 4.x needs a preparation stage for the RP2350
+                writeEmitter.fire(bold("\r\n4.0 or above\r\n"));
+                let picotoolOpts = ["uf2", "convert", imageFile, "-t", "bin", imageFile +  ".uf2", "-o", "0x" + fsStart.toString(16), "--family", "data"];
+                writeEmitter.fire(bold("\r\nGenerating UF2 image\r\n"));
+                writeEmitter.fire(blue("Command Line: ") + green(picotool + " " + picotoolOpts.join(" ") + "\r\n"));
+                exitCode = await runCommand(picotool, picotoolOpts);
+                if (exitCode) {
+                    writeEmitter.fire(red("\r\n\r\nERROR:  Generation failed, error code: " + String(exitCode) + "\r\n\r\n"));
+                    return;
+                }
+                conversion = true;
+            } else {
+                writeEmitter.fire(bold("\r\n3.x, no UF2 conversion\r\n"));
+            }
+        }
+
         // Upload stage differs per core
         let uploadOpts : any[] = [];
         let cmdApp = python3;
@@ -374,7 +399,11 @@ export function activate(context: vscode.ExtensionContext) {
             if (uf2Path) {
                 uf2conv = uf2Path + path.sep + uf2conv;
             }
-            uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
+            if (conversion) {
+                uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+            } else {
+                uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
+            }
         } else if (esp32) {
             let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
             let flashFreq = arduinoContext.boardDetails.buildProperties["build.flash_freq"];
