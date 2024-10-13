@@ -374,17 +374,19 @@ export function activate(context: vscode.ExtensionContext) {
         let conversion = false
         if (pico) {
             if (Number(arduinoContext.boardDetails?.buildProperties['version'].split('.')[0]) > 3) {
-                // Pico 4.x needs a preparation stage for the RP2350
-                writeEmitter.fire(bold("\r\n4.0 or above\r\n"));
-                let picotoolOpts = ["uf2", "convert", imageFile, "-t", "bin", imageFile +  ".uf2", "-o", "0x" + fsStart.toString(16), "--family", "data"];
-                writeEmitter.fire(bold("\r\nGenerating UF2 image\r\n"));
-                writeEmitter.fire(blue("Command Line: ") + green(picotool + " " + picotoolOpts.join(" ") + "\r\n"));
-                exitCode = await runCommand(picotool, picotoolOpts);
-                if (exitCode) {
-                    writeEmitter.fire(red("\r\n\r\nERROR:  Generation failed, error code: " + String(exitCode) + "\r\n\r\n"));
-                    return;
+                if (arduinoContext.boardDetails.buildProperties['build.chip'] == "rp2350") {
+                    // Pico 4.x needs a preparation stage for the RP2350
+                    writeEmitter.fire(bold("\r\n4.0 or above\r\n"));
+                    let picotoolOpts = ["uf2", "convert", imageFile, "-t", "bin", imageFile +  ".uf2", "-o", "0x" + fsStart.toString(16), "--family", "data"];
+                    writeEmitter.fire(bold("\r\nGenerating UF2 image\r\n"));
+                    writeEmitter.fire(blue("Command Line: ") + green(picotool + " " + picotoolOpts.join(" ") + "\r\n"));
+                    exitCode = await runCommand(picotool, picotoolOpts);
+                    if (exitCode) {
+                        writeEmitter.fire(red("\r\n\r\nERROR:  Generation failed, error code: " + String(exitCode) + "\r\n\r\n"));
+                        return;
+                    }
+                    conversion = true;
                 }
-                conversion = true;
             } else {
                 writeEmitter.fire(bold("\r\n3.x, no UF2 conversion\r\n"));
             }
