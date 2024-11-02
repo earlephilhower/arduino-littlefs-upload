@@ -92,7 +92,21 @@ function color(
   }m${text}${resetStyle}`;
 }
 
-
+function fancyParseInt(str: string) : number {
+    var up = str.toUpperCase().trim();
+    if (up == "") {
+        return 0;
+    }
+    if (up.indexOf('0X') >= 0) {
+        return parseInt(str, 16);
+    } else if (up.indexOf('K') >= 0) {
+        return 1024 * parseInt(up.substring(0, up.indexOf('K')));
+    } else if (up.indexOf('M') >= 0) {
+        return 1024 * 1024 * parseInt(up.substring(0, up.indexOf('M')));
+    } else {
+        return parseInt(str);
+    }
+}
 
 // Execute a command and display it's output in the terminal
 async function runCommand(exe : string, opts : any[]) {
@@ -253,17 +267,33 @@ export function activate(context: vscode.ExtensionContext) {
             }
             let partitionData = fs.readFileSync(partitionFile, 'utf8');
             let partitionDataArray = partitionData.split("\n");
-            for (var i = 1; i < partitionDataArray.length; i++){
+            var lastend = 0x8000 + 0xc00;
+            for (var i = 0; i < partitionDataArray.length; i++){
+                var line = partitionDataArray[i];
+                if (line.indexOf('#') >= 0) {
+                    line = line.substring(0, line.indexOf('#'));
+                }
                 var partitionEntry = partitionDataArray[i].split(",");
-                if (partitionEntry[0].includes("spiffs")) {
-                    fsStart = parseInt(partitionEntry[3], 16); // Partition Offset
-                    fsEnd = fsStart + parseInt(partitionEntry[4], 16); // Partition Length
+                if (partitionEntry.length > 4) {
+                    var offset = fancyParseInt(partitionEntry[3]);
+                    var length = fancyParseInt(partitionEntry[4]);
+                    if (offset == 0) {
+                        offset = lastend;
+                    }
+                    lastend = offset + length;
+                    var parttype = partitionEntry[2].toUpperCase().trim();
+                    if ((parttype == "SPIFFS") || (parttype == "LITTLEFS")) {
+                        fsStart = offset;
+                        fsEnd = length;
+                    }
                 }
             }
             if (!fsStart || !fsEnd) {
                 writeEmitter.fire(red("\r\n\r\nERROR: Partition entry not found in csv file!\r\n"));
                 return;
             }
+            writeEmitter.fire(blue("       Start: ") + green("0x" + fsStart.toString(16)) + "\r\n");
+            writeEmitter.fire(blue("         End: ") + green("0x" + fsEnd.toString(16)) + "\r\n");
 
             uploadSpeed = Number(arduinoContext.boardDetails.buildProperties["upload.speed"]);
             // Fixed for ESP32
