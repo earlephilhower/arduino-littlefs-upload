@@ -284,7 +284,7 @@ export function activate(context: vscode.ExtensionContext) {
                     var parttype = partitionEntry[2].toUpperCase().trim();
                     if ((parttype == "SPIFFS") || (parttype == "LITTLEFS")) {
                         fsStart = offset;
-                        fsEnd = length;
+                        fsEnd = fsStart + length;
                     }
                 }
             }
