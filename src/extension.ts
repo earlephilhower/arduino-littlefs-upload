@@ -125,6 +125,20 @@ async function runCommand(exe : string, opts : any[]) {
     return exitCode;
 }
 
+function getSelectedUploadMethod(boardDetails : BoardDetails) : string {
+    const uploadOptions = boardDetails.configOptions.find(option => option.option === "uploadmethod");
+    if (uploadOptions === undefined) {
+        return "default";
+    }
+
+    const selectedOption = uploadOptions.values.find(value => value.selected === true);
+    if (selectedOption === undefined) {
+        return "default";
+    }
+
+    return selectedOption.value;
+}
+
 function getSelectedPartitionScheme(boardDetails : BoardDetails) : string | undefined {
     const partitionSchemeOptions = boardDetails.configOptions.find(option => option.option === "PartitionScheme");
     if (partitionSchemeOptions === undefined) {
@@ -222,6 +236,8 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Figure out what we're running on
         let pico = false;
+        let rp2350 = false;
+        let uploadmethod = "default";
         let esp8266 = false;
         let esp32 = false;
         let esp32variant = "";
@@ -229,6 +245,9 @@ export function activate(context: vscode.ExtensionContext) {
             case "rp2040": {
                 writeEmitter.fire(blue("      Device: ") + green("RP2040 series") + "\r\n");
                 pico = true;
+                rp2350 = arduinoContext.boardDetails.buildProperties['build.chip'].startsWith("rp2350");
+                uploadmethod = getSelectedUploadMethod(arduinoContext.boardDetails);
+                writeEmitter.fire(blue("Upload Using: ") + green(uploadmethod) + "\r\n");
                 break;
             }
             case "esp8266": {
@@ -354,24 +373,31 @@ export function activate(context: vscode.ExtensionContext) {
 
         // TBD - add non-serial UF2 upload via OpenOCD
         let serialPort = "";
-        if (arduinoContext.port?.address === undefined) {
+        if (uploadmethod === "picotool") {
+            serialPort = "picotool";
+        } else if (uploadmethod === "picoprobe_cmsis_dap") {
+            serialPort = "openocd";
+        } else if (arduinoContext.port?.address === undefined) {
             writeEmitter.fire(red("\r\n\r\nERROR: No port specified, check IDE menus.\r\n"));
             return;
         } else {
             serialPort = arduinoContext.port?.address;
         }
-        if (arduinoContext.port?.protocol !== "serial") {
-            writeEmitter.fire(red("\r\n\r\nERROR: Only serial port upload supported at this time.\r\n"));
-            return;
-        }
+        //if (arduinoContext.port?.protocol !== "serial") {
+        //    writeEmitter.fire(red("\r\n\r\nERROR: Only serial port upload supported at this time.\r\n"));
+        //    return;
+        //}
 
         let python3 = "python3" + ext;
         let python3Path = undefined;
         let picotool = "picotool" + ext;
         let picotoolPath = undefined;
+        let openocd = "openocd" + ext;
+        let openocdPath = undefined;
         if (pico) {
             python3Path = findTool(arduinoContext, "runtime.tools.pqt-python3");
             picotoolPath = findTool(arduinoContext, "runtime.tools.pqt-picotool");
+            openocdPath = findTool(arduinoContext, "runtime.tools.pqt-openocd");
         } else if (esp8266) {
             python3Path = findTool(arduinoContext, "runtime.tools.python3");
         } else if (esp32) {
@@ -382,6 +408,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
         if (picotoolPath) {
             picotool = picotoolPath + path.sep + picotool;
+        }
+        if (openocdPath) {
+            openocd = openocdPath + path.sep + "bin" + path.sep + openocd;
         }
 
         // We can't always know where the compile path is, so just use a temp name
@@ -404,7 +433,7 @@ export function activate(context: vscode.ExtensionContext) {
         let conversion = false
         if (pico) {
             if (Number(arduinoContext.boardDetails?.buildProperties['version'].split('.')[0]) > 3) {
-                if (arduinoContext.boardDetails.buildProperties['build.chip'] == "rp2350") {
+                if (rp2350) {
                     // Pico 4.x needs a preparation stage for the RP2350
                     writeEmitter.fire(bold("\r\n4.0 or above\r\n"));
                     let picotoolOpts = ["uf2", "convert", imageFile, "-t", "bin", imageFile +  ".uf2", "-o", "0x" + fsStart.toString(16), "--family", "data"];
@@ -426,15 +455,28 @@ export function activate(context: vscode.ExtensionContext) {
         let uploadOpts : any[] = [];
         let cmdApp = python3;
         if (pico) {
-            let uf2conv = "tools" + path.sep + "uf2conv.py";
-            let uf2Path = findTool(arduinoContext, "runtime.platform.path");
-            if (uf2Path) {
-                uf2conv = uf2Path + path.sep + uf2conv;
-            }
-            if (conversion) {
-                uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+            if (uploadmethod === "picotool") {
+                cmdApp = picotool;
+                uploadOpts = ["load", imageFile, "-o",  "0x" + fsStart.toString(16), "-f", "-x"];
+            } else if (uploadmethod === "picoprobe_cmsis_dap") {
+                cmdApp = openocd;
+                let chip = "rp2040";
+                if (arduinoContext.boardDetails.buildProperties['build.chip']) {
+                    chip = arduinoContext.boardDetails.buildProperties['build.chip'];
+                }
+                uploadOpts = ["-f", "interface/cmsis-dap.cfg", "-f", "target/" + chip +".cfg", "-s", openocdPath + "/share/openocd/scripts",
+                              "-c", "init; adapter speed 5000; program "+ imageFile + " verify 0x" + fsStart.toString(16) + "; reset; exit"];
             } else {
-                uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
+                let uf2conv = "tools" + path.sep + "uf2conv.py";
+                let uf2Path = findTool(arduinoContext, "runtime.platform.path");
+                if (uf2Path) {
+                    uf2conv = uf2Path + path.sep + uf2conv;
+                }
+                if (conversion) {
+                    uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+                } else {
+                    uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
+                }
             }
         } else if (esp32) {
             let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
