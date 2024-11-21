@@ -371,7 +371,8 @@ export function activate(context: vscode.ExtensionContext) {
             writeEmitter.fire(red("\r\n\r\nERROR: mklittlefs not found!\r\n" + resetStyle));
         }
 
-        // TBD - add non-serial UF2 upload via OpenOCD
+        let network = false;
+        let networkPort = 0;
         let serialPort = "";
         if (uploadmethod === "picotool") {
             serialPort = "picotool";
@@ -383,10 +384,20 @@ export function activate(context: vscode.ExtensionContext) {
         } else {
             serialPort = arduinoContext.port?.address;
         }
-        //if (arduinoContext.port?.protocol !== "serial") {
-        //    writeEmitter.fire(red("\r\n\r\nERROR: Only serial port upload supported at this time.\r\n"));
-        //    return;
-        //}
+        if (arduinoContext.port?.protocol === "network") {
+            if (!arduinoContext.port?.properties.port) {
+                writeEmitter.fire(red("\r\n\r\nERROR: Network upload but port specified, check IDE menus.\r\n"));
+                return;
+            }
+            networkPort = Number(arduinoContext.port?.properties.port);
+            network = true;
+            writeEmitter.fire(blue("Network Info: ") + green(serialPort + ":" + String(networkPort)) + "\r\n");
+        } else if (arduinoContext.port?.protocol === "serial") {
+            writeEmitter.fire(blue(" Serial Port: ") + green(serialPort) + "\r\n");
+        } else {
+            writeEmitter.fire(red("\r\n\r\nERROR: Unknown upload method '" + String(arduinoContext.port?.properties.port) + "' specified, check IDE menus.\r\n"));
+            return;
+        }
 
         let python3 = "python3" + ext;
         let python3Path = undefined;
@@ -467,33 +478,58 @@ export function activate(context: vscode.ExtensionContext) {
                 uploadOpts = ["-f", "interface/cmsis-dap.cfg", "-f", "target/" + chip +".cfg", "-s", openocdPath + "/share/openocd/scripts",
                               "-c", "init; adapter speed 5000; program "+ imageFile + " verify 0x" + fsStart.toString(16) + "; reset; exit"];
             } else {
-                let uf2conv = "tools" + path.sep + "uf2conv.py";
-                let uf2Path = findTool(arduinoContext, "runtime.platform.path");
-                if (uf2Path) {
-                    uf2conv = uf2Path + path.sep + uf2conv;
-                }
-                if (conversion) {
-                    uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+                if (network) {
+                    let espota = "tools" + path.sep + "espota.py";
+                    let espotaPath = findTool(arduinoContext, "runtime.platform.path");
+                    if (espotaPath) {
+                        espota = espotaPath + path.sep + espota;
+                    }
+                    uploadOpts = ["-I", espota, "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
                 } else {
-                    uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
+                    let uf2conv = "tools" + path.sep + "uf2conv.py";
+                    let uf2Path = findTool(arduinoContext, "runtime.platform.path");
+                    if (uf2Path) {
+                        uf2conv = uf2Path + path.sep + uf2conv;
+                    }
+                    if (conversion) {
+                        uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+                    } else {
+                        uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
+                    }
                 }
             }
         } else if (esp32) {
-            let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
-            let flashFreq = arduinoContext.boardDetails.buildProperties["build.flash_freq"];
-            let espTool = "esptool" + extEspTool;
-            let espToolPath = findTool(arduinoContext, "runtime.tools.esptool_py.path");
-            if (espToolPath) {
-                espTool = espToolPath + path.sep + espTool;
-            }
-            uploadOpts = ["--chip", esp32variant, "--port", serialPort, "--baud", String(uploadSpeed),
-                "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
-                "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
-            if ((platform() === 'win32') || (platform() === 'darwin')) {
-                cmdApp = espTool; // Have binary EXE on Mac/Windows
+            if (network) {
+                let espota = "tools" + path.sep + "espota.py";
+                let espotaPath = findTool(arduinoContext, "runtime.platform.path");
+                if (espotaPath) {
+                    espota = espotaPath + path.sep + espota;
+                }
+                uploadOpts = ["-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
+
+                if ((platform() === 'win32') || (platform() === 'darwin')) {
+                    cmdApp = espota; // Have binary EXE on Mac/Windows
+                } else {
+                    cmdApp = "python3"; // Not shipped, assumed installed on Linux
+                    uploadOpts.unshift(espota); // Need to call Python3
+                }
             } else {
-                cmdApp = "python3"; // Not shipped, assumed installed on Linux
-                uploadOpts.unshift(espTool); // Need to call Python3
+                let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
+                let flashFreq = arduinoContext.boardDetails.buildProperties["build.flash_freq"];
+                let espTool = "esptool" + extEspTool;
+                let espToolPath = findTool(arduinoContext, "runtime.tools.esptool_py.path");
+                if (espToolPath) {
+                    espTool = espToolPath + path.sep + espTool;
+                }
+                uploadOpts = ["--chip", esp32variant, "--port", serialPort, "--baud", String(uploadSpeed),
+                    "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
+                    "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
+                if ((platform() === 'win32') || (platform() === 'darwin')) {
+                    cmdApp = espTool; // Have binary EXE on Mac/Windows
+                } else {
+                    cmdApp = "python3"; // Not shipped, assumed installed on Linux
+                    uploadOpts.unshift(espTool); // Need to call Python3
+                }
             }
         } else { // esp8266
             let upload = "tools" + path.sep + "upload.py";
