@@ -152,7 +152,7 @@ function getSelectedPartitionScheme(boardDetails : BoardDetails) : string | unde
         return;
     }
 
-    return selectedOption.value;
+    return boardDetails.buildProperties["menu.PartitionScheme." + selectedOption.value + ".build.partitions"];
 }
 
 function getDefaultPartitionScheme(boardDetails : BoardDetails) : string | undefined {
