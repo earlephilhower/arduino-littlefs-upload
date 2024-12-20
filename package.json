@@ -2,7 +2,7 @@
   "name": "arduino-littlefs-upload",
   "displayName": "arduino-littlefs-upload",
   "description": "Build and uploads LittleFS filesystems for the Arduino-Pico RP2040 core, ESP8266 core, or ESP32 core under Arduino IDE 2.2.1 or higher",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "engines": {
     "vscode": "^1.82.0"
   },
