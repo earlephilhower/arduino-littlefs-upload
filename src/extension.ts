@@ -545,8 +545,8 @@ export function activate(context: vscode.ExtensionContext) {
                 if (uploadPath) {
                     upload = uploadPath + path.sep + upload;
                 }
+                uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
             }
-            uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
         }
 
         writeEmitter.fire(bold("\r\nUploading LittleFS filesystem\r\n"));
