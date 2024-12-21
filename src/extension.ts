@@ -539,13 +539,6 @@ export function activate(context: vscode.ExtensionContext) {
                     espota = espotaPath + path.sep + espota;
                 }
                 uploadOpts = ["-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
-
-                if ((platform() === 'win32') || (platform() === 'darwin')) {
-                    cmdApp = espota; // Have binary EXE on Mac/Windows
-                } else {
-                    cmdApp = "python3"; // Not shipped, assumed installed on Linux
-                    uploadOpts.unshift(espota); // Need to call Python3
-                }
             } else {
                 let upload = "tools" + path.sep + "upload.py";
                 let uploadPath = findTool(arduinoContext, "runtime.platform.path");
