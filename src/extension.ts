@@ -538,7 +538,7 @@ export function activate(context: vscode.ExtensionContext) {
                 if (espotaPath) {
                     espota = espotaPath + path.sep + espota;
                 }
-                uploadOpts = ["-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
+                uploadOpts = [espota, "-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
             } else {
                 let upload = "tools" + path.sep + "upload.py";
                 let uploadPath = findTool(arduinoContext, "runtime.platform.path");
