@@ -532,12 +532,21 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             }
         } else { // esp8266
-            let upload = "tools" + path.sep + "upload.py";
-            let uploadPath = findTool(arduinoContext, "runtime.platform.path");
-            if (uploadPath) {
-                upload = uploadPath + path.sep + upload;
+            if (network) {
+                let espota = "tools" + path.sep + "espota.py";
+                let espotaPath = findTool(arduinoContext, "runtime.platform.path");
+                if (espotaPath) {
+                    espota = espotaPath + path.sep + espota;
+                }
+                uploadOpts = [espota, "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
+            } else {
+                let upload = "tools" + path.sep + "upload.py";
+                let uploadPath = findTool(arduinoContext, "runtime.platform.path");
+                if (uploadPath) {
+                    upload = uploadPath + path.sep + upload;
+                }
+                uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
             }
-            uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
         }
 
         writeEmitter.fire(bold("\r\nUploading LittleFS filesystem\r\n"));
