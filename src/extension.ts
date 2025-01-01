@@ -516,7 +516,7 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
                 let flashFreq = arduinoContext.boardDetails.buildProperties["build.flash_freq"];
-                let espTool = "esptool" + extEspTool;
+                let espTool = "esptool";
                 let espToolPath = findTool(arduinoContext, "runtime.tools.esptool_py.path");
                 if (espToolPath) {
                     espTool = espToolPath + path.sep + espTool;
@@ -525,10 +525,16 @@ export function activate(context: vscode.ExtensionContext) {
                     "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
                     "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
                 if ((platform() === 'win32') || (platform() === 'darwin')) {
-                    cmdApp = espTool; // Have binary EXE on Mac/Windows
+                    cmdApp = espTool + extEspTool; // Have binary EXE on Mac/Windows
                 } else {
-                    cmdApp = "python3"; // Not shipped, assumed installed on Linux
-                    uploadOpts.unshift(espTool); // Need to call Python3
+                    // Sometimes they give a .py, sometimes they give a precompiled binary
+                    // If there's a .py we'll use that one, OTW hope there's a binary one
+                    if (fs.existsSync(espTool + extEspTool)) {
+                        cmdApp = "python3"; // Not shipped, assumed installed on Linux
+                        uploadOpts.unshift(espTool + extEspTool); // Need to call Python3
+                    } else {
+                        cmdApp = espTool; // Binary without extension
+                    }
                 }
             }
         } else { // esp8266
