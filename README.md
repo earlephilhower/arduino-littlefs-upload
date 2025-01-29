@@ -31,3 +31,7 @@ Make sure that you close any open `Serial Monitor` windows.
 ## Installation
 
 Copy the [VSIX file](https://github.com/espx-cz/arduino-spiffs-upload/releases) to `~/.arduinoIDE/plugins/` on Mac and Linux or `C:\Users\<username>\.arduinoIDE\plugins\` on Windows (you may need to make this directory yourself beforehand). Restart the IDE.
+
+## Arduino Nano ESP32 Notes
+
+This board uses DFU mode by default and requires several steps to make it compatible with this plug in.  See the Arduino Forum post for the necessary steps: https://forum.arduino.cc/t/best-method-for-utilizing-on-board-flash/1222469/15
