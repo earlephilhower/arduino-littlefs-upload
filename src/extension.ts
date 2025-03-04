@@ -500,18 +500,18 @@ export function activate(context: vscode.ExtensionContext) {
             }
         } else if (esp32) {
             if (network) {
-                let espota = "tools" + path.sep + "espota.py";
+                let espota = "tools" + path.sep + "espota";
                 let espotaPath = findTool(arduinoContext, "runtime.platform.path");
                 if (espotaPath) {
                     espota = espotaPath + path.sep + espota;
                 }
                 uploadOpts = ["-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
 
-                if ((platform() === 'win32') || (platform() === 'darwin')) {
-                    cmdApp = espota; // Have binary EXE on Mac/Windows
+                if (platform() === 'win32') {
+                    cmdApp = espota; // Have binary EXE on Windows
                 } else {
-                    cmdApp = "python3"; // Not shipped, assumed installed on Linux
-                    uploadOpts.unshift(espota); // Need to call Python3
+                    cmdApp = "python3"; // Not shipped, assumed installed on Linux and MacOS
+                    uploadOpts.unshift(espota + ".py"); // Need to call Python3
                 }
             } else {
                 let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
