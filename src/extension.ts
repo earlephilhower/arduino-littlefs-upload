@@ -508,9 +508,9 @@ export function activate(context: vscode.ExtensionContext) {
                 uploadOpts = ["-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
 
                 if (platform() === 'win32') {
-                    cmdApp = espota; // Have binary EXE on Mac/Windows
+                    cmdApp = espota; // Have binary EXE on Windows
                 } else {
-                    cmdApp = "python3"; // Not shipped, assumed installed on Linux
+                    cmdApp = "python3"; // Not shipped, assumed installed on Linux and MacOS
                     uploadOpts.unshift(espota + ".py"); // Need to call Python3
                 }
             } else {
