@@ -500,7 +500,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         } else if (esp32) {
             if (network) {
-                let espota = "tools" + path.sep + "espota.py";
+                let espota = "tools" + path.sep + "espota";
                 let espotaPath = findTool(arduinoContext, "runtime.platform.path");
                 if (espotaPath) {
                     espota = espotaPath + path.sep + espota;
@@ -511,7 +511,7 @@ export function activate(context: vscode.ExtensionContext) {
                     cmdApp = espota; // Have binary EXE on Mac/Windows
                 } else {
                     cmdApp = "python3"; // Not shipped, assumed installed on Linux
-                    uploadOpts.unshift(espota); // Need to call Python3
+                    uploadOpts.unshift(espota + ".py"); // Need to call Python3
                 }
             } else {
                 let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
