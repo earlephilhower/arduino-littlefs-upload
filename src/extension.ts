@@ -507,7 +507,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
                 uploadOpts = ["-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
 
-                if ((platform() === 'win32') || (platform() === 'darwin')) {
+                if (platform() === 'win32') {
                     cmdApp = espota; // Have binary EXE on Mac/Windows
                 } else {
                     cmdApp = "python3"; // Not shipped, assumed installed on Linux
