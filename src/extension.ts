@@ -292,7 +292,7 @@ export function activate(context: vscode.ExtensionContext) {
                 if (line.indexOf('#') >= 0) {
                     line = line.substring(0, line.indexOf('#'));
                 }
-                var partitionEntry = partitionDataArray[i].split(",");
+                var partitionEntry = line.split(",");
                 if (partitionEntry.length > 4) {
                     var offset = fancyParseInt(partitionEntry[3]);
                     var length = fancyParseInt(partitionEntry[4]);
