@@ -6,6 +6,11 @@ on:
     tags:
     - '*'
 
+permissions:
+  actions: read
+  contents: write
+  packages: write
+
 jobs:
   build-vsix:
     runs-on: ubuntu-20.04
