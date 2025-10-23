@@ -363,7 +363,7 @@ export function activate(context: vscode.ExtensionContext) {
         } else if (esp32) {
             tool = findTool(arduinoContext, "runtime.tools.mklittlefs.path");
         } else { // ESP8266
-            tool = findTool(arduinoContext, "runtime.tools.mklittlefs");
+            tool = findTool(arduinoContext, "runtime.tools.mklittlefs-3.1.0-gcc10.3-e5f9fec.path");
         }
         if (tool) {
             mklittlefs = tool + path.sep + mklittlefs;
