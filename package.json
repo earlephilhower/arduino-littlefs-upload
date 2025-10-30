@@ -20,6 +20,10 @@
       {
         "command": "arduino-littlefs-upload.uploadLittleFS",
         "title": "Upload LittleFS to Pico/ESP8266/ESP32"
+      },
+      {
+        "command": "arduino-littlefs-upload.buildLittleFS",
+        "title": "Build LittleFS image in sketch directory"
       }
     ]
   },
