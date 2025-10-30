@@ -3,13 +3,22 @@
 
 MIT licensed, see LICENSE.md
 
-LittleFS uploader compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico), the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino) and the community [ESP32 Arduino core](https://github.com/espressif/arduino-esp32).
+LittleFS uploader and builder compatible with Arduino IDE 2.2.1 or higher. For use with the [Raspberry Pi Pico RP2040 Arduino core `arduino-pico`](https://github.com/earlephilhower/arduino-pico), the community [ESP8266 Arduino core](https://github.com/esp8266/Arduino) and the community [ESP32 Arduino core](https://github.com/espressif/arduino-esp32).
 
-## Usage
+## Usage, uploading a filesystem to the device
 
 `[Ctrl]` + `[Shift]` + `[P]`, then "`Upload LittleFS to Pico/ESP8266/ESP32`".
 
 On macOS, press `[⌘]` + `[Shift]` + `[P]` to open the Command Palette in the Arduino IDE, then "`Upload LittleFS to Pico/ESP8266/ESP32`".
+
+## Usage, building (but not uploading) a filesystem to the device
+
+For most users this is not ever needed, but it can be useful if you are distributing filesystem updates to many devices without needing the IDE.  The created filesystem image will be stored in the sketch directory as `mklittlefs.bin`, shown in the command output.
+
+`[Ctrl]` + `[Shift]` + `[P]`, then "`Build LittleFS image in sketch directory`"
+
+On macOS, press `[⌘]` + `[Shift]` + `[P]` to open the Command Palette in the Arduino IDE, then "`Build LittleFS image in sketch directory`"
+
 
 ## Glitches
 
@@ -19,12 +28,15 @@ You can also open another sketch, close the auto-opened one, then re-open it.
 
 A fix is already in the Arduino repository for this issue.
 
+## Could not open <serial port>
+
 If you get:
 ```
 A fatal error occurred: Could not open <serial port>, the port doesn't exist
 ERROR:  Upload failed, error code: 2
 ```
 Make sure that you close any open `Serial Monitor` windows.
+
 
 ## Installation
 

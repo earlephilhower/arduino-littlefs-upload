@@ -205,370 +205,390 @@ export function activate(context: vscode.ExtensionContext) {
         return;
     }
 
-    // Register the command
-    const disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', async () => {
+    // Register the upload command
+    const disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', async () => { doOperation(context, arduinoContext, true); });
+    context.subscriptions.push(disposable);
 
-        //let str = JSON.stringify(arduinoContext, null, 4);
-        //console.log(str);
+    // Register the build command
+    const disposable2 = vscode.commands.registerCommand('arduino-littlefs-upload.buildLittleFS', async () => { doOperation(context, arduinoContext, false); });
+    context.subscriptions.push(disposable2);
+}
 
-        if ((arduinoContext.boardDetails === undefined) ||  (arduinoContext.fqbn === undefined)){
-            vscode.window.showErrorMessage("Board details not available. Compile the sketch once.");
+async function doOperation(context: vscode.ExtensionContext, arduinoContext: ArduinoContext, doUpload: boolean) {
+    //let str = JSON.stringify(arduinoContext, null, 4);
+    //console.log(str);
+
+    if ((arduinoContext.boardDetails === undefined) ||  (arduinoContext.fqbn === undefined)){
+        vscode.window.showErrorMessage("Board details not available. Compile the sketch once.");
+        return;
+    }
+
+    if (!await waitForTerminal("LittleFS Upload")) {
+        vscode.window.showErrorMessage("Unable to open upload terminal");
+    }
+
+    // Clear the terminal
+    writeEmitter.fire(clear + resetStyle);
+
+    writeEmitter.fire(bold("LittleFS Filesystem " + (doUpload ? "Uploader" : "Builder" ) + " v" + String(context.extension.packageJSON.version) + " -- https://github.com/earlephilhower/arduino-littlefs-upload\r\n\r\n"));
+
+    writeEmitter.fire(blue(" Sketch Path: ") + green("" + arduinoContext.sketchPath) + "\r\n");
+    // Need to have a data folder present, or this isn't gonna work...
+    let dataFolder = arduinoContext.sketchPath + path.sep + "data";
+    writeEmitter.fire(blue("   Data Path: ") + green(dataFolder) + "\r\n");
+    if (!fs.existsSync(dataFolder)) {
+        writeEmitter.fire(red("\r\n\r\nERROR: No data folder found at " + dataFolder) + "\r\n");
+        return;
+    }
+
+    // Figure out what we're running on
+    let pico = false;
+    let rp2350 = false;
+    let uploadmethod = "default";
+    let esp8266 = false;
+    let esp32 = false;
+    let esp32variant = "";
+    switch (arduinoContext.fqbn.split(':')[1]) {
+        case "rp2040": {
+            writeEmitter.fire(blue("      Device: ") + green("RP2040 series") + "\r\n");
+            pico = true;
+            rp2350 = arduinoContext.boardDetails.buildProperties['build.chip'].startsWith("rp2350");
+            uploadmethod = getSelectedUploadMethod(arduinoContext.boardDetails);
+            writeEmitter.fire(blue("Upload Using: ") + green(uploadmethod) + "\r\n");
+            break;
+        }
+        case "esp8266": {
+            writeEmitter.fire(blue("      Device: ") + green("ESP8266 series") + "\r\n");
+            esp8266 = true;
+            break;
+        }
+        case "esp32": {
+            esp32 = true;
+            esp32variant = arduinoContext.boardDetails.buildProperties['build.mcu'];
+            writeEmitter.fire(blue("      Device: ") + green("ESP32 series, model " + esp32variant) + "\r\n");
+            break;
+        }
+        default: {
+            writeEmitter.fire(red("\r\n\r\nERROR: Only Arduino-Pico RP2040, RP2350, ESP32, and ESP8266 supported.\r\n"));
             return;
         }
+    }
 
-        if (!await waitForTerminal("LittleFS Upload")) {
-            vscode.window.showErrorMessage("Unable to open upload terminal");
-        }
-
-        // Clear the terminal
-        writeEmitter.fire(clear + resetStyle);
-
-        writeEmitter.fire(bold("LittleFS Filesystem Uploader v" + String(context.extension.packageJSON.version) + " -- https://github.com/earlephilhower/arduino-littlefs-upload\r\n\r\n"));
-
-        writeEmitter.fire(blue(" Sketch Path: ") + green("" + arduinoContext.sketchPath) + "\r\n");
-        // Need to have a data folder present, or this isn't gonna work...
-        let dataFolder = arduinoContext.sketchPath + path.sep + "data";
-        writeEmitter.fire(blue("   Data Path: ") + green(dataFolder) + "\r\n");
-        if (!fs.existsSync(dataFolder)) {
-            writeEmitter.fire(red("\r\n\r\nERROR: No data folder found at " + dataFolder) + "\r\n");
+    // Need to find the selected menu item, then get the associated build values for the FS configuration
+    let fsStart = 0;
+    let fsEnd = 0;
+    let page = 0;
+    let blocksize = 0;
+    let uploadSpeed = 115200; // ESP8266-only
+    if (esp32) {
+        const partitionFile = getPartitionSchemeFile(arduinoContext);
+        if (partitionFile === undefined) {
+            writeEmitter.fire(red("\r\n\r\nERROR: Partitions not defined for this ESP32 board\r\n"));
             return;
         }
-
-        // Figure out what we're running on
-        let pico = false;
-        let rp2350 = false;
-        let uploadmethod = "default";
-        let esp8266 = false;
-        let esp32 = false;
-        let esp32variant = "";
-        switch (arduinoContext.fqbn.split(':')[1]) {
-            case "rp2040": {
-                writeEmitter.fire(blue("      Device: ") + green("RP2040 series") + "\r\n");
-                pico = true;
-                rp2350 = arduinoContext.boardDetails.buildProperties['build.chip'].startsWith("rp2350");
-                uploadmethod = getSelectedUploadMethod(arduinoContext.boardDetails);
-                writeEmitter.fire(blue("Upload Using: ") + green(uploadmethod) + "\r\n");
-                break;
-            }
-            case "esp8266": {
-                writeEmitter.fire(blue("      Device: ") + green("ESP8266 series") + "\r\n");
-                esp8266 = true;
-                break;
-            }
-            case "esp32": {
-                esp32 = true;
-                esp32variant = arduinoContext.boardDetails.buildProperties['build.mcu'];
-                writeEmitter.fire(blue("      Device: ") + green("ESP32 series, model " + esp32variant) + "\r\n");
-                break;
-            }
-            default: {
-                writeEmitter.fire(red("\r\n\r\nERROR: Only Arduino-Pico RP2040, ESP32, and ESP8266 supported.\r\n"));
-                return;
-            }
+        writeEmitter.fire(blue("  Partitions: ") + green(partitionFile) + "\r\n");
+        if (!fs.existsSync(partitionFile)) {
+            writeEmitter.fire(red("\r\n\r\nERROR: Partition file not found!\r\n"));
+            return;
         }
-
-        // Need to find the selected menu item, then get the associated build values for the FS configuration
-        let fsStart = 0;
-        let fsEnd = 0;
-        let page = 0;
-        let blocksize = 0;
-        let uploadSpeed = 115200; // ESP8266-only
-        if (esp32) {
-            const partitionFile = getPartitionSchemeFile(arduinoContext);
-            if (partitionFile === undefined) {
-                writeEmitter.fire(red("\r\n\r\nERROR: Partitions not defined for this ESP32 board\r\n"));
-                return;
+        let partitionData = fs.readFileSync(partitionFile, 'utf8');
+        let partitionDataArray = partitionData.split("\n");
+        var lastend = 0x8000 + 0xc00;
+        for (var i = 0; i < partitionDataArray.length; i++){
+            var line = partitionDataArray[i];
+            if (line.indexOf('#') >= 0) {
+                line = line.substring(0, line.indexOf('#'));
             }
-            writeEmitter.fire(blue("  Partitions: ") + green(partitionFile) + "\r\n");
-            if (!fs.existsSync(partitionFile)) {
-                writeEmitter.fire(red("\r\n\r\nERROR: Partition file not found!\r\n"));
-                return;
-            }
-            let partitionData = fs.readFileSync(partitionFile, 'utf8');
-            let partitionDataArray = partitionData.split("\n");
-            var lastend = 0x8000 + 0xc00;
-            for (var i = 0; i < partitionDataArray.length; i++){
-                var line = partitionDataArray[i];
-                if (line.indexOf('#') >= 0) {
-                    line = line.substring(0, line.indexOf('#'));
+            var partitionEntry = line.split(",");
+            if (partitionEntry.length > 4) {
+                var offset = fancyParseInt(partitionEntry[3]);
+                var length = fancyParseInt(partitionEntry[4]);
+                if (offset == 0) {
+                    offset = lastend;
                 }
-                var partitionEntry = line.split(",");
-                if (partitionEntry.length > 4) {
-                    var offset = fancyParseInt(partitionEntry[3]);
-                    var length = fancyParseInt(partitionEntry[4]);
-                    if (offset == 0) {
-                        offset = lastend;
-                    }
-                    lastend = offset + length;
-                    var parttype = partitionEntry[2].toUpperCase().trim();
-                    if ((parttype == "SPIFFS") || (parttype == "LITTLEFS")) {
-                        fsStart = offset;
-                        fsEnd = fsStart + length;
-                    }
+                lastend = offset + length;
+                var parttype = partitionEntry[2].toUpperCase().trim();
+                if ((parttype == "SPIFFS") || (parttype == "LITTLEFS")) {
+                    fsStart = offset;
+                    fsEnd = fsStart + length;
                 }
             }
-            if (!fsStart || !fsEnd) {
-                writeEmitter.fire(red("\r\n\r\nERROR: Partition entry not found in csv file!\r\n"));
-                return;
-            }
-            writeEmitter.fire(blue("       Start: ") + green("0x" + fsStart.toString(16)) + "\r\n");
-            writeEmitter.fire(blue("         End: ") + green("0x" + fsEnd.toString(16)) + "\r\n");
-
-            uploadSpeed = Number(arduinoContext.boardDetails.buildProperties["upload.speed"]);
-            // Fixed for ESP32
-            page = 256;
-            blocksize = 4096;
         }
-
-        arduinoContext.boardDetails.configOptions.forEach( (opt) => {
-            let optSeek = pico ? "flash" : "eesz";
-            let startMarker = pico ? "fs_start" : "spiffs_start";
-            let endMarker = pico ? "fs_end" : "spiffs_end";
-            if (String(opt.option) === String(optSeek)) {
-                opt.values.forEach( (itm) => {
-                    if (itm.selected) {
-                        let menustr = "menu." + optSeek + "." + itm.value + ".build.";
-                        fsStart = Number(arduinoContext.boardDetails?.buildProperties[menustr + startMarker]);
-                        fsEnd = Number(arduinoContext.boardDetails?.buildProperties[menustr + endMarker]);
-                        if (pico) { // Fixed-size always
-                            page = 256;
-                            blocksize = 4096;
-                        } else if (esp8266) {
-                            page = Number(arduinoContext.boardDetails?.buildProperties[menustr + "spiffs_pagesize"]);
-                            blocksize = Number(arduinoContext.boardDetails?.buildProperties[menustr + "spiffs_blocksize"]);
-                        }
-                    }
-                });
-            } else if ((String(opt.option) === "baud") || (String(opt.option) === "UploadSpeed")) {
-                opt.values.forEach( (itm) => {
-                    if (itm.selected) {
-                        uploadSpeed = Number(itm.value);
-                    }
-                });
-            }
-        });
-        if (!fsStart || !fsEnd || !page || !blocksize || (fsEnd <= fsStart)) {
-            writeEmitter.fire(red("\r\n\r\nERROR: No filesystem specified, check flash size menu\r\n"));
+        if (!fsStart || !fsEnd) {
+            writeEmitter.fire(red("\r\n\r\nERROR: Partition entry not found in csv file!\r\n"));
             return;
         }
+        writeEmitter.fire(blue("       Start: ") + green("0x" + fsStart.toString(16)) + "\r\n");
+        writeEmitter.fire(blue("         End: ") + green("0x" + fsEnd.toString(16)) + "\r\n");
 
-        // Windows exes need ".exe" suffix
-        let ext = (platform() === 'win32') ? ".exe" : "";
-        let extEspTool = (platform() === 'win32') ? ".exe" : ((platform() === 'darwin') ? "" :  ".py");
-        let mklittlefs = "mklittlefs" + ext;
+        uploadSpeed = Number(arduinoContext.boardDetails.buildProperties["upload.speed"]);
+        // Fixed for ESP32
+        page = 256;
+        blocksize = 4096;
+    }
 
-        let tool = undefined;
-        if (pico) {
-            tool = findTool(arduinoContext, "runtime.tools.pqt-mklittlefs");
-        } else if (esp32) {
-            tool = findTool(arduinoContext, "runtime.tools.mklittlefs.path");
-        } else { // ESP8266
-            tool = findTool(arduinoContext, "runtime.tools.mklittlefs-3.1.0-gcc10.3-e5f9fec.path");
+    arduinoContext.boardDetails.configOptions.forEach( (opt) => {
+        let optSeek = pico ? "flash" : "eesz";
+        let startMarker = pico ? "fs_start" : "spiffs_start";
+        let endMarker = pico ? "fs_end" : "spiffs_end";
+        if (String(opt.option) === String(optSeek)) {
+            opt.values.forEach( (itm) => {
+                if (itm.selected) {
+                    let menustr = "menu." + optSeek + "." + itm.value + ".build.";
+                    fsStart = Number(arduinoContext.boardDetails?.buildProperties[menustr + startMarker]);
+                    fsEnd = Number(arduinoContext.boardDetails?.buildProperties[menustr + endMarker]);
+                    if (pico) { // Fixed-size always
+                        page = 256;
+                        blocksize = 4096;
+                    } else if (esp8266) {
+                        page = Number(arduinoContext.boardDetails?.buildProperties[menustr + "spiffs_pagesize"]);
+                        blocksize = Number(arduinoContext.boardDetails?.buildProperties[menustr + "spiffs_blocksize"]);
+                    }
+                }
+            });
+        } else if ((String(opt.option) === "baud") || (String(opt.option) === "UploadSpeed")) {
+            opt.values.forEach( (itm) => {
+                if (itm.selected) {
+                    uploadSpeed = Number(itm.value);
+                }
+            });
         }
-        if (tool) {
-            mklittlefs = tool + path.sep + mklittlefs;
-        } else {
-            writeEmitter.fire(red("\r\n\r\nERROR: mklittlefs not found!\r\n" + resetStyle));
-        }
+    });
+    if (!fsStart || !fsEnd || !page || !blocksize || (fsEnd <= fsStart)) {
+        writeEmitter.fire(red("\r\n\r\nERROR: No filesystem specified, check flash size menu\r\n"));
+        return;
+    }
 
-        let network = false;
-        let networkPort = 0;
-        let serialPort = "";
-        if (uploadmethod === "picotool") {
-            serialPort = "picotool";
-        } else if (uploadmethod === "picoprobe_cmsis_dap") {
-            serialPort = "openocd";
-        } else if (arduinoContext.port?.address === undefined) {
+    // Windows exes need ".exe" suffix
+    let ext = (platform() === 'win32') ? ".exe" : "";
+    let extEspTool = (platform() === 'win32') ? ".exe" : ((platform() === 'darwin') ? "" :  ".py");
+    let mklittlefs = "mklittlefs" + ext;
+
+    let tool = undefined;
+    if (pico) {
+        tool = findTool(arduinoContext, "runtime.tools.pqt-mklittlefs");
+    } else if (esp32) {
+        tool = findTool(arduinoContext, "runtime.tools.mklittlefs.path");
+    } else { // ESP8266
+        tool = findTool(arduinoContext, "runtime.tools.mklittlefs-3.1.0-gcc10.3-e5f9fec.path");
+    }
+    if (tool) {
+        mklittlefs = tool + path.sep + mklittlefs;
+    } else {
+        writeEmitter.fire(red("\r\n\r\nERROR: mklittlefs not found!\r\n" + resetStyle));
+    }
+
+    let network = false;
+    let networkPort = 0;
+    let serialPort = "";
+    if (uploadmethod === "picotool") {
+        serialPort = "picotool";
+    } else if (uploadmethod === "picoprobe_cmsis_dap") {
+        serialPort = "openocd";
+    } else if (arduinoContext.port?.address === undefined) {
+        if (doUpload) {
             writeEmitter.fire(red("\r\n\r\nERROR: No port specified, check IDE menus.\r\n"));
             return;
-        } else {
-            serialPort = arduinoContext.port?.address;
         }
-        if (arduinoContext.port?.protocol === "network") {
-            if (!arduinoContext.port?.properties.port) {
-                writeEmitter.fire(red("\r\n\r\nERROR: Network upload but port specified, check IDE menus.\r\n"));
-                return;
-            }
-            networkPort = Number(arduinoContext.port?.properties.port);
-            network = true;
-            writeEmitter.fire(blue("Network Info: ") + green(serialPort + ":" + String(networkPort)) + "\r\n");
-        } else if (arduinoContext.port?.protocol === "serial") {
-            writeEmitter.fire(blue(" Serial Port: ") + green(serialPort) + "\r\n");
-        } else {
+    } else {
+        serialPort = arduinoContext.port?.address;
+    }
+    if (arduinoContext.port?.protocol === "network") {
+        if (!arduinoContext.port?.properties.port) {
+            writeEmitter.fire(red("\r\n\r\nERROR: Network upload but port specified, check IDE menus.\r\n"));
+            return;
+        }
+        networkPort = Number(arduinoContext.port?.properties.port);
+        network = true;
+        writeEmitter.fire(blue("Network Info: ") + green(serialPort + ":" + String(networkPort)) + "\r\n");
+    } else if (arduinoContext.port?.protocol === "serial") {
+        writeEmitter.fire(blue(" Serial Port: ") + green(serialPort) + "\r\n");
+    } else {
+        if (doUpload) {
             writeEmitter.fire(red("\r\n\r\nERROR: Unknown upload method '" + String(arduinoContext.port?.properties.port) + "' specified, check IDE menus.\r\n"));
             return;
         }
+    }
 
-        let python3 = "python3" + ext;
-        let python3Path = undefined;
-        let picotool = "picotool" + ext;
-        let picotoolPath = undefined;
-        let openocd = "openocd" + ext;
-        let openocdPath = undefined;
-        if (pico) {
-            python3Path = findTool(arduinoContext, "runtime.tools.pqt-python3");
-            picotoolPath = findTool(arduinoContext, "runtime.tools.pqt-picotool");
-            openocdPath = findTool(arduinoContext, "runtime.tools.pqt-openocd");
-        } else if (esp8266) {
-            python3Path = findTool(arduinoContext, "runtime.tools.python3");
-        } else if (esp32) {
-            python3Path = findTool(arduinoContext, "runtime.tools.python3.path");
-        }
-        if (python3Path) {
-            python3 = python3Path + path.sep + python3;
-        }
-        if (picotoolPath) {
-            picotool = picotoolPath + path.sep + picotool;
-        }
-        if (openocdPath) {
-            openocd = openocdPath + path.sep + "bin" + path.sep + openocd;
-        }
+    let python3 = "python3" + ext;
+    let python3Path = undefined;
+    let picotool = "picotool" + ext;
+    let picotoolPath = undefined;
+    let openocd = "openocd" + ext;
+    let openocdPath = undefined;
+    if (pico) {
+        python3Path = findTool(arduinoContext, "runtime.tools.pqt-python3");
+        picotoolPath = findTool(arduinoContext, "runtime.tools.pqt-picotool");
+        openocdPath = findTool(arduinoContext, "runtime.tools.pqt-openocd");
+    } else if (esp8266) {
+        python3Path = findTool(arduinoContext, "runtime.tools.python3");
+    } else if (esp32) {
+        python3Path = findTool(arduinoContext, "runtime.tools.python3.path");
+    }
+    if (python3Path) {
+        python3 = python3Path + path.sep + python3;
+    }
+    if (picotoolPath) {
+        picotool = picotoolPath + path.sep + picotool;
+    }
+    if (openocdPath) {
+        openocd = openocdPath + path.sep + "bin" + path.sep + openocd;
+    }
 
-        // We can't always know where the compile path is, so just use a temp name
-        const tmp = require('tmp');
-        tmp.setGracefulCleanup();
-        let imageFile = tmp.tmpNameSync({postfix: ".littlefs.bin"});
+    // We can't always know where the compile path is, so just use a temp name
+    const tmp = require('tmp');
+    tmp.setGracefulCleanup();
+    let imageFile = "";
+    if (doUpload) {
+        imageFile = tmp.tmpNameSync({postfix: ".littlefs.bin"});
+    } else {
+        imageFile = arduinoContext.sketchPath + path.sep + "mklittlefs.bin";
+        writeEmitter.fire(blue("Output File:  ") + green(imageFile) + "\r\n");
+    }
 
-        let buildOpts =  ["-c", dataFolder, "-p", String(page), "-b", String(blocksize), "-s", String(fsEnd - fsStart), imageFile];
+    let buildOpts =  ["-c", dataFolder, "-p", String(page), "-b", String(blocksize), "-s", String(fsEnd - fsStart), imageFile];
 
-        // All mklittlefs take the same options, so run in common
-        writeEmitter.fire(bold("\r\nBuilding LittleFS filesystem\r\n"));
-        writeEmitter.fire(blue("Command Line: ") + green(mklittlefs + " " + buildOpts.join(" ")) + "\r\n");
+    // All mklittlefs take the same options, so run in common
+    writeEmitter.fire(bold("\r\nBuilding LittleFS filesystem\r\n"));
+    writeEmitter.fire(blue("Command Line: ") + green(mklittlefs + " " + buildOpts.join(" ")) + "\r\n");
 
-        let exitCode = await runCommand(mklittlefs, buildOpts);
-        if (exitCode) {
-            writeEmitter.fire(red("\r\n\r\nERROR:  Mklittlefs failed, error code: " + String(exitCode) + "\r\n\r\n"));
-            return;
-        }
+    let exitCode = await runCommand(mklittlefs, buildOpts);
+    if (exitCode) {
+        writeEmitter.fire(red("\r\n\r\nERROR:  Mklittlefs failed, error code: " + String(exitCode) + "\r\n\r\n"));
+        return;
+    }
 
-        let conversion = false
-        if (pico) {
-            if (Number(arduinoContext.boardDetails?.buildProperties['version'].split('.')[0]) > 3) {
-                if (rp2350) {
-                    // Pico 4.x needs a preparation stage for the RP2350
-                    writeEmitter.fire(bold("\r\n4.0 or above\r\n"));
-                    let picotoolOpts = ["uf2", "convert", imageFile, "-t", "bin", imageFile +  ".uf2", "-o", "0x" + fsStart.toString(16), "--family", "data"];
-                    writeEmitter.fire(bold("\r\nGenerating UF2 image\r\n"));
-                    writeEmitter.fire(blue("Command Line: ") + green(picotool + " " + picotoolOpts.join(" ") + "\r\n"));
-                    exitCode = await runCommand(picotool, picotoolOpts);
-                    if (exitCode) {
-                        writeEmitter.fire(red("\r\n\r\nERROR:  Generation failed, error code: " + String(exitCode) + "\r\n\r\n"));
-                        return;
-                    }
-                    conversion = true;
+    if (!doUpload) {
+        writeEmitter.fire(bold("\r\nCompleted build.\r\n\r\n"));
+        vscode.window.showInformationMessage("LittleFS build completed!");
+        return;
+    }
+
+    let conversion = false
+    if (pico) {
+        if (Number(arduinoContext.boardDetails?.buildProperties['version'].split('.')[0]) > 3) {
+            if (rp2350) {
+                // Pico 4.x needs a preparation stage for the RP2350
+                writeEmitter.fire(bold("\r\n4.0 or above\r\n"));
+                let picotoolOpts = ["uf2", "convert", imageFile, "-t", "bin", imageFile +  ".uf2", "-o", "0x" + fsStart.toString(16), "--family", "data"];
+                writeEmitter.fire(bold("\r\nGenerating UF2 image\r\n"));
+                writeEmitter.fire(blue("Command Line: ") + green(picotool + " " + picotoolOpts.join(" ") + "\r\n"));
+                exitCode = await runCommand(picotool, picotoolOpts);
+                if (exitCode) {
+                    writeEmitter.fire(red("\r\n\r\nERROR:  Generation failed, error code: " + String(exitCode) + "\r\n\r\n"));
+                    return;
                 }
-            } else {
-                writeEmitter.fire(bold("\r\n3.x, no UF2 conversion\r\n"));
+                conversion = true;
             }
+        } else {
+            writeEmitter.fire(bold("\r\n3.x, no UF2 conversion\r\n"));
         }
+    }
 
-        // Upload stage differs per core
-        let uploadOpts : any[] = [];
-        let cmdApp = python3;
-        if (pico) {
-            if (uploadmethod === "picotool") {
-                cmdApp = picotool;
-                uploadOpts = ["load", imageFile, "-o",  "0x" + fsStart.toString(16), "-f", "-x"];
-            } else if (uploadmethod === "picoprobe_cmsis_dap") {
-                cmdApp = openocd;
-                let chip = "rp2040";
-                if (arduinoContext.boardDetails.buildProperties['build.chip']) {
-                    chip = arduinoContext.boardDetails.buildProperties['build.chip'];
-                }
-                uploadOpts = ["-f", "interface/cmsis-dap.cfg", "-f", "target/" + chip +".cfg", "-s", openocdPath + "/share/openocd/scripts",
-                              "-c", "init; adapter speed 5000; program "+ imageFile + " verify 0x" + fsStart.toString(16) + "; reset; exit"];
-            } else {
-                if (network) {
-                    let espota = "tools" + path.sep + "espota.py";
-                    let espotaPath = findTool(arduinoContext, "runtime.platform.path");
-                    if (espotaPath) {
-                        espota = espotaPath + path.sep + espota;
-                    }
-                    uploadOpts = ["-I", espota, "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
-                } else {
-                    let uf2conv = "tools" + path.sep + "uf2conv.py";
-                    let uf2Path = findTool(arduinoContext, "runtime.platform.path");
-                    if (uf2Path) {
-                        uf2conv = uf2Path + path.sep + uf2conv;
-                    }
-                    if (conversion) {
-                        uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
-                    } else {
-                        uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
-                    }
-                }
+    // Upload stage differs per core
+    let uploadOpts : any[] = [];
+    let cmdApp = python3;
+    if (pico) {
+        if (uploadmethod === "picotool") {
+            cmdApp = picotool;
+            uploadOpts = ["load", imageFile, "-o",  "0x" + fsStart.toString(16), "-f", "-x"];
+        } else if (uploadmethod === "picoprobe_cmsis_dap") {
+            cmdApp = openocd;
+            let chip = "rp2040";
+            if (arduinoContext.boardDetails.buildProperties['build.chip']) {
+                chip = arduinoContext.boardDetails.buildProperties['build.chip'];
             }
-        } else if (esp32) {
-            if (network) {
-                let espota = "tools" + path.sep + "espota";
-                let espotaPath = findTool(arduinoContext, "runtime.platform.path");
-                if (espotaPath) {
-                    espota = espotaPath + path.sep + espota;
-                }
-                uploadOpts = ["-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
-
-                if (platform() === 'win32') {
-                    cmdApp = espota; // Have binary EXE on Windows
-                } else {
-                    cmdApp = "python3"; // Not shipped, assumed installed on Linux and MacOS
-                    uploadOpts.unshift(espota + ".py"); // Need to call Python3
-                }
-            } else {
-                let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
-                let flashFreq = arduinoContext.boardDetails.buildProperties["build.flash_freq"];
-                let espTool = "esptool";
-                let espToolPath = findTool(arduinoContext, "runtime.tools.esptool_py.path");
-                if (espToolPath) {
-                    espTool = espToolPath + path.sep + espTool;
-                }
-                uploadOpts = ["--chip", esp32variant, "--port", serialPort, "--baud", String(uploadSpeed),
-                    "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
-                    "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
-                if ((platform() === 'win32') || (platform() === 'darwin')) {
-                    cmdApp = espTool + extEspTool; // Have binary EXE on Mac/Windows
-                } else {
-                    // Sometimes they give a .py, sometimes they give a precompiled binary
-                    // If there's a .py we'll use that one, OTW hope there's a binary one
-                    if (fs.existsSync(espTool + extEspTool)) {
-                        cmdApp = "python3"; // Not shipped, assumed installed on Linux
-                        uploadOpts.unshift(espTool + extEspTool); // Need to call Python3
-                    } else {
-                        cmdApp = espTool; // Binary without extension
-                    }
-                }
-            }
-        } else { // esp8266
+            uploadOpts = ["-f", "interface/cmsis-dap.cfg", "-f", "target/" + chip +".cfg", "-s", openocdPath + "/share/openocd/scripts",
+                          "-c", "init; adapter speed 5000; program "+ imageFile + " verify 0x" + fsStart.toString(16) + "; reset; exit"];
+        } else {
             if (network) {
                 let espota = "tools" + path.sep + "espota.py";
                 let espotaPath = findTool(arduinoContext, "runtime.platform.path");
                 if (espotaPath) {
                     espota = espotaPath + path.sep + espota;
                 }
-                uploadOpts = [espota, "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
+                uploadOpts = ["-I", espota, "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
             } else {
-                let upload = "tools" + path.sep + "upload.py";
-                let uploadPath = findTool(arduinoContext, "runtime.platform.path");
-                if (uploadPath) {
-                    upload = uploadPath + path.sep + upload;
+                let uf2conv = "tools" + path.sep + "uf2conv.py";
+                let uf2Path = findTool(arduinoContext, "runtime.platform.path");
+                if (uf2Path) {
+                    uf2conv = uf2Path + path.sep + uf2conv;
                 }
-                uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
+                if (conversion) {
+                    uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+                } else {
+                    uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
+                }
             }
         }
+    } else if (esp32) {
+        if (network) {
+            let espota = "tools" + path.sep + "espota";
+            let espotaPath = findTool(arduinoContext, "runtime.platform.path");
+            if (espotaPath) {
+                espota = espotaPath + path.sep + espota;
+            }
+            uploadOpts = ["-r", "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
 
-        writeEmitter.fire(bold("\r\nUploading LittleFS filesystem\r\n"));
-        writeEmitter.fire(blue("Command Line: ") + green(cmdApp + " " + uploadOpts.join(" ") + "\r\n"));
-
-        exitCode = await runCommand(cmdApp, uploadOpts);
-        if (exitCode) {
-            writeEmitter.fire(red("\r\n\r\nERROR:  Upload failed, error code: " + String(exitCode) + "\r\n\r\n"));
-            return;
+            if (platform() === 'win32') {
+                cmdApp = espota; // Have binary EXE on Windows
+            } else {
+                cmdApp = "python3"; // Not shipped, assumed installed on Linux and MacOS
+                uploadOpts.unshift(espota + ".py"); // Need to call Python3
+            }
+        } else {
+            let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
+            let flashFreq = arduinoContext.boardDetails.buildProperties["build.flash_freq"];
+            let espTool = "esptool";
+            let espToolPath = findTool(arduinoContext, "runtime.tools.esptool_py.path");
+            if (espToolPath) {
+                espTool = espToolPath + path.sep + espTool;
+            }
+            uploadOpts = ["--chip", esp32variant, "--port", serialPort, "--baud", String(uploadSpeed),
+                "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
+                "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
+            if ((platform() === 'win32') || (platform() === 'darwin')) {
+                cmdApp = espTool + extEspTool; // Have binary EXE on Mac/Windows
+            } else {
+                // Sometimes they give a .py, sometimes they give a precompiled binary
+                // If there's a .py we'll use that one, OTW hope there's a binary one
+                if (fs.existsSync(espTool + extEspTool)) {
+                    cmdApp = "python3"; // Not shipped, assumed installed on Linux
+                    uploadOpts.unshift(espTool + extEspTool); // Need to call Python3
+                } else {
+                    cmdApp = espTool; // Binary without extension
+                }
+            }
         }
+    } else { // esp8266
+        if (network) {
+            let espota = "tools" + path.sep + "espota.py";
+            let espotaPath = findTool(arduinoContext, "runtime.platform.path");
+            if (espotaPath) {
+                espota = espotaPath + path.sep + espota;
+            }
+            uploadOpts = [espota, "-i", serialPort, "-p", String(networkPort), "-f", imageFile, "-s"];
+        } else {
+            let upload = "tools" + path.sep + "upload.py";
+            let uploadPath = findTool(arduinoContext, "runtime.platform.path");
+            if (uploadPath) {
+                upload = uploadPath + path.sep + upload;
+            }
+            uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
+        }
+    }
 
-        writeEmitter.fire(bold("\r\nCompleted upload.\r\n\r\n"));
-        vscode.window.showInformationMessage("LittleFS upload completed!");
-      });
+    writeEmitter.fire(bold("\r\nUploading LittleFS filesystem\r\n"));
+    writeEmitter.fire(blue("Command Line: ") + green(cmdApp + " " + uploadOpts.join(" ") + "\r\n"));
 
-      context.subscriptions.push(disposable);
+    exitCode = await runCommand(cmdApp, uploadOpts);
+    if (exitCode) {
+        writeEmitter.fire(red("\r\n\r\nERROR:  Upload failed, error code: " + String(exitCode) + "\r\n\r\n"));
+        return;
+    }
+
+    writeEmitter.fire(bold("\r\nCompleted upload.\r\n\r\n"));
+    vscode.window.showInformationMessage("LittleFS upload completed!");
 }
 
 export function deactivate() { }
