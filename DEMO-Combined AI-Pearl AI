@@ -1,0 +1,1429 @@
+Here's a complete Demo AI system in One Python file 
+That combines multiple AI models in one file
+You can run directly in Spyder or Any Python Environment.............................
+
+This Demo Ai-Website helps School/University Project............
+
+To Run the file spyder is best to run,,,,,
+
+PYTHON CODE:
+"""
+===============================================================================
+PEARL AI - Complete AI Assistant System
+Single File Python Application
+Run this file directly in Spyder or any Python environment
+===============================================================================
+"""
+
+import os
+import sys
+import json
+import time
+import threading
+import datetime
+import base64
+import io
+import re
+import webbrowser
+from typing import List, Dict, Optional, Any
+from dataclasses import dataclass, asdict
+import random
+
+# GUI Libraries
+import tkinter as tk
+from tkinter import ttk, scrolledtext, filedialog, messagebox, font, Menu
+from tkinter.colorchooser import askcolor
+from tkinter import simpledialog
+
+# AI Libraries (optional - install with pip if needed)
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    print("Note: OpenAI library not installed. Install with: pip install openai")
+
+try:
+    import google.generativeai as genai
+    GOOGLE_AI_AVAILABLE = True
+except ImportError:
+    GOOGLE_AI_AVAILABLE = False
+    print("Note: Google AI library not installed. Install with: pip install google-generativeai")
+
+# Utility Libraries (optional)
+try:
+    import pyperclip
+    CLIPBOARD_AVAILABLE = True
+except ImportError:
+    CLIPBOARD_AVAILABLE = False
+    print("Note: pyperclip not installed. Install with: pip install pyperclip")
+
+try:
+    import pygame
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
+
+try:
+    from PIL import Image, ImageTk, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("Note: PIL not installed. Install with: pip install pillow")
+
+# =============================================================================
+# CONFIGURATION CLASSES
+# =============================================================================
+
+@dataclass
+class ModelConfig:
+    """Configuration for AI models"""
+    name: str
+    provider: str
+    description: str
+    max_tokens: int
+    capabilities: List[str]
+    color: str
+    
+@dataclass
+class Message:
+    """Chat message structure"""
+    role: str  # 'user' or 'assistant'
+    content: str
+    timestamp: str
+    model: str = ""
+    tokens: int = 0
+    
+@dataclass
+class Conversation:
+    """Conversation structure"""
+    id: int
+    title: str
+    messages: List[Message]
+    created_at: str
+    updated_at: str
+    model_used: str = ""
+    token_count: int = 0
+
+# =============================================================================
+# AI MODELS DATA
+# =============================================================================
+
+AI_MODELS = [
+    ModelConfig(
+        name="GPT-4 Turbo",
+        provider="OpenAI",
+        description="Most capable GPT-4 model with 128K context",
+        max_tokens=4096,
+        capabilities=["text", "vision", "file-upload"],
+        color="#10A37F"
+    ),
+    ModelConfig(
+        name="Claude 3 Opus",
+        provider="Anthropic",
+        description="Most intelligent model for complex tasks",
+        max_tokens=4096,
+        capabilities=["text", "vision", "long-context"],
+        color="#D946EF"
+    ),
+    ModelConfig(
+        name="Gemini Pro",
+        provider="Google",
+        description="Best for general-purpose tasks",
+        max_tokens=2048,
+        capabilities=["text", "vision", "multimodal"],
+        color="#4285F4"
+    ),
+    ModelConfig(
+        name="Llama 3 70B",
+        provider="Meta",
+        description="Open-source model excelling in coding",
+        max_tokens=4096,
+        capabilities=["text", "coding"],
+        color="#0866FF"
+    ),
+    ModelConfig(
+        name="Mistral Large",
+        provider="Mistral AI",
+        description="Excellent for multilingual tasks",
+        max_tokens=4096,
+        capabilities=["text", "multilingual"],
+        color="#7C3AED"
+    )
+]
+
+# =============================================================================
+# MOCK AI RESPONSES (for demo without API keys)
+# =============================================================================
+
+MOCK_RESPONSES = [
+    "I understand your question. As an AI assistant, I can help with various tasks including writing, analysis, problem-solving, and creative work.",
+    "That's an interesting query! I can provide detailed information on this topic and help you explore different aspects.",
+    "Thanks for asking! I'm here to assist you with accurate information and helpful suggestions.",
+    "Great question! Let me provide you with a comprehensive answer based on my knowledge.",
+    "I appreciate your curiosity. Here's what I can tell you about this subject...",
+    "Based on your question, I can offer insights and practical advice to help you move forward.",
+    "That's a thoughtful question. Let me break it down for you and provide clear explanations.",
+    "I understand what you're asking. Here's my analysis and some recommendations for you.",
+    "Interesting perspective! Let me share some information that might help clarify this topic.",
+    "Thanks for reaching out. I'm ready to assist you with detailed explanations and examples."
+]
+
+# =============================================================================
+# AI ENGINE
+# =============================================================================
+
+class AIEngine:
+    """Handles AI model interactions"""
+    
+    def __init__(self):
+        self.api_keys = {
+            "openai": "",
+            "google": ""
+        }
+        self.settings = {
+            "temperature": 0.7,
+            "max_tokens": 2000,
+            "top_p": 0.9
+        }
+        
+    def set_api_key(self, provider: str, key: str):
+        """Set API key for a provider"""
+        if provider in self.api_keys:
+            self.api_keys[provider] = key
+            return True
+        return False
+    
+    def chat_completion(self, provider: str, model: str, messages: List[Dict], **kwargs) -> Dict:
+        """Send chat completion request"""
+        
+        # If no API key, use mock response
+        if not self.api_keys.get(provider):
+            return self._get_mock_response(model)
+        
+        try:
+            if provider == "openai" and OPENAI_AVAILABLE:
+                return self._call_openai(model, messages, **kwargs)
+            elif provider == "google" and GOOGLE_AI_AVAILABLE:
+                return self._call_google(model, messages, **kwargs)
+            else:
+                return self._get_mock_response(model)
+                
+        except Exception as e:
+            return {"error": str(e), "content": "Error connecting to AI service"}
+    
+    def _call_openai(self, model: str, messages: List[Dict], **kwargs) -> Dict:
+        """Call OpenAI API"""
+        client = openai.OpenAI(api_key=self.api_keys["openai"])
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=kwargs.get("temperature", self.settings["temperature"]),
+            max_tokens=kwargs.get("max_tokens", self.settings["max_tokens"]),
+            top_p=kwargs.get("top_p", self.settings["top_p"])
+        )
+        
+        return {
+            "content": response.choices[0].message.content,
+            "tokens": response.usage.total_tokens,
+            "model": model
+        }
+    
+    def _call_google(self, model: str, messages: List[Dict], **kwargs) -> Dict:
+        """Call Google AI API"""
+        genai.configure(api_key=self.api_keys["google"])
+        model_obj = genai.GenerativeModel(model)
+        
+        # Format messages for Google
+        formatted_messages = []
+        for msg in messages:
+            formatted_messages.append({
+                "role": "user" if msg["role"] == "user" else "model",
+                "parts": [msg["content"]]
+            })
+        
+        response = model_obj.generate_content(
+            formatted_messages,
+            generation_config=genai.types.GenerationConfig(
+                temperature=kwargs.get("temperature", self.settings["temperature"]),
+                max_output_tokens=kwargs.get("max_tokens", self.settings["max_tokens"]),
+                top_p=kwargs.get("top_p", self.settings["top_p"])
+            )
+        )
+        
+        return {
+            "content": response.text,
+            "model": model
+        }
+    
+    def _get_mock_response(self, model: str) -> Dict:
+        """Get mock response for demo"""
+        time.sleep(1.5)  # Simulate API delay
+        return {
+            "content": f"[DEMO MODE] {random.choice(MOCK_RESPONSES)}\n\n"
+                      f"This is a simulated response from {model}. "
+                      f"Add your API key for real AI responses.",
+            "model": model,
+            "tokens": random.randint(100, 500)
+        }
+
+# =============================================================================
+# CHAT MANAGER
+# =============================================================================
+
+class ChatManager:
+    """Manages chat conversations"""
+    
+    def __init__(self, data_dir="data"):
+        self.conversations: List[Conversation] = []
+        self.current_conversation: Optional[Conversation] = None
+        self.data_dir = data_dir
+        self.history_file = os.path.join(data_dir, "chat_history.json")
+        
+        # Create data directory
+        os.makedirs(data_dir, exist_ok=True)
+        
+        # Load history
+        self.load_history()
+        
+        # Start with default conversation
+        if not self.conversations:
+            self.start_new_conversation("Welcome to Pearl AI!")
+    
+    def start_new_conversation(self, title: str = "New Chat") -> Conversation:
+        """Start a new conversation"""
+        conv_id = len(self.conversations) + 1
+        timestamp = datetime.datetime.now().isoformat()
+        
+        conversation = Conversation(
+            id=conv_id,
+            title=title,
+            messages=[],
+            created_at=timestamp,
+            updated_at=timestamp
+        )
+        
+        self.conversations.append(conversation)
+        self.current_conversation = conversation
+        
+        # Add welcome message
+        welcome_msg = Message(
+            role="assistant",
+            content="Hello! I'm Pearl AI, your intelligent assistant. "
+                   "How can I help you today?",
+            timestamp=timestamp,
+            model="Pearl AI"
+        )
+        conversation.messages.append(welcome_msg)
+        
+        self.save_history()
+        return conversation
+    
+    def add_message(self, role: str, content: str, model: str = "", tokens: int = 0):
+        """Add a message to current conversation"""
+        if not self.current_conversation:
+            self.start_new_conversation()
+        
+        message = Message(
+            role=role,
+            content=content,
+            timestamp=datetime.datetime.now().isoformat(),
+            model=model,
+            tokens=tokens
+        )
+        
+        self.current_conversation.messages.append(message)
+        self.current_conversation.updated_at = datetime.datetime.now().isoformat()
+        
+        if role == "assistant":
+            self.current_conversation.model_used = model
+            self.current_conversation.token_count += tokens
+        
+        self.save_history()
+        return message
+    
+    def get_conversation(self, conv_id: int) -> Optional[Conversation]:
+        """Get conversation by ID"""
+        for conv in self.conversations:
+            if conv.id == conv_id:
+                return conv
+        return None
+    
+    def delete_conversation(self, conv_id: int):
+        """Delete a conversation"""
+        self.conversations = [c for c in self.conversations if c.id != conv_id]
+        self.save_history()
+        
+        if self.current_conversation and self.current_conversation.id == conv_id:
+            if self.conversations:
+                self.current_conversation = self.conversations[-1]
+            else:
+                self.start_new_conversation()
+    
+    def save_history(self):
+        """Save chat history to file"""
+        try:
+            data = []
+            for conv in self.conversations:
+                conv_dict = asdict(conv)
+                # Convert Message objects to dict
+                conv_dict["messages"] = [asdict(msg) for msg in conv.messages]
+                data.append(conv_dict)
+            
+            with open(self.history_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving history: {e}")
+    
+    def load_history(self):
+        """Load chat history from file"""
+        try:
+            if os.path.exists(self.history_file):
+                with open(self.history_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                self.conversations = []
+                for conv_data in data:
+                    # Convert dict to Conversation object
+                    messages = [Message(**msg) for msg in conv_data.get("messages", [])]
+                    conv = Conversation(
+                        id=conv_data["id"],
+                        title=conv_data["title"],
+                        messages=messages,
+                        created_at=conv_data["created_at"],
+                        updated_at=conv_data["updated_at"],
+                        model_used=conv_data.get("model_used", ""),
+                        token_count=conv_data.get("token_count", 0)
+                    )
+                    self.conversations.append(conv)
+                
+                if self.conversations:
+                    self.current_conversation = self.conversations[-1]
+        except Exception as e:
+            print(f"Error loading history: {e}")
+            self.conversations = []
+    
+    def export_conversation(self, conv_id: int, format: str = "txt"):
+        """Export conversation to file"""
+        conversation = self.get_conversation(conv_id)
+        if not conversation:
+            return False
+        
+        filename = f"pearl_ai_chat_{conv_id}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        try:
+            if format == "txt":
+                filename += ".txt"
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write(f"Chat: {conversation.title}\n")
+                    f.write(f"Created: {conversation.created_at}\n")
+                    f.write("="*60 + "\n\n")
+                    
+                    for msg in conversation.messages:
+                        sender = "You" if msg.role == "user" else "AI"
+                        f.write(f"{sender} ({msg.timestamp}):\n")
+                        f.write(f"{msg.content}\n")
+                        f.write("-"*40 + "\n")
+            
+            elif format == "json":
+                filename += ".json"
+                with open(filename, "w", encoding="utf-8") as f:
+                    json.dump(asdict(conversation), f, indent=2, ensure_ascii=False)
+            
+            return filename
+        except Exception as e:
+            print(f"Error exporting conversation: {e}")
+            return False
+
+# =============================================================================
+# MAIN APPLICATION
+# =============================================================================
+
+class PearlAIApp:
+    """Main Tkinter application"""
+    
+    def __init__(self, root):
+        self.root = root
+        self.root.title("🤖 Pearl AI - Complete AI Assistant")
+        self.root.geometry("1400x800")
+        self.root.minsize(1200, 700)
+        
+        # Center window
+        self.center_window()
+        
+        # Initialize components
+        self.ai_engine = AIEngine()
+        self.chat_manager = ChatManager()
+        
+        # Current state
+        self.current_model = 0  # Index in AI_MODELS
+        self.is_processing = False
+        self.dark_mode = True
+        
+        # Statistics
+        self.total_tokens = 0
+        self.total_requests = 0
+        
+        # Setup GUI
+        self.setup_icons()
+        self.setup_styles()
+        self.create_widgets()
+        
+        # Bind events
+        self.root.bind("<Configure>", self.on_window_resize)
+        
+        # Initial update
+        self.update_chat_display()
+        self.update_stats()
+        
+        # Auto-save timer
+        self.setup_autosave()
+    
+    def center_window(self):
+        """Center window on screen"""
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+    
+    def setup_icons(self):
+        """Setup icons for the application"""
+        # Create simple text icons
+        self.icons = {
+            "send": "🚀",
+            "new": "➕",
+            "copy": "📋",
+            "save": "💾",
+            "clear": "🗑️",
+            "settings": "⚙️",
+            "export": "📤",
+            "voice": "🎤",
+            "file": "📁",
+            "image": "🖼️",
+            "ai": "🤖",
+            "user": "👤"
+        }
+    
+    def setup_styles(self):
+        """Setup application styles"""
+        # Colors
+        if self.dark_mode:
+            self.colors = {
+                "bg": "#0f172a",
+                "bg_secondary": "#1e293b",
+                "bg_tertiary": "#334155",
+                "text": "#f8fafc",
+                "text_secondary": "#cbd5e1",
+                "accent": "#06b6d4",
+                "accent_light": "#67e8f9",
+                "success": "#10b981",
+                "warning": "#f59e0b",
+                "error": "#ef4444",
+                "border": "#475569"
+            }
+        else:
+            self.colors = {
+                "bg": "#ffffff",
+                "bg_secondary": "#f8fafc",
+                "bg_tertiary": "#e2e8f0",
+                "text": "#1e293b",
+                "text_secondary": "#64748b",
+                "accent": "#06b6d4",
+                "accent_light": "#0891b2",
+                "success": "#10b981",
+                "warning": "#f59e0b",
+                "error": "#ef4444",
+                "border": "#cbd5e1"
+            }
+        
+        # Fonts
+        self.fonts = {
+            "title": ("Segoe UI", 24, "bold"),
+            "heading": ("Segoe UI", 14, "bold"),
+            "normal": ("Segoe UI", 11),
+            "small": ("Segoe UI", 10),
+            "monospace": ("Consolas", 10)
+        }
+    
+    def create_widgets(self):
+        """Create all GUI widgets"""
+        # Configure root window
+        self.root.configure(bg=self.colors["bg"])
+        
+        # Create menu bar
+        self.create_menu_bar()
+        
+        # Main container
+        self.main_frame = tk.Frame(self.root, bg=self.colors["bg"])
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        
+        # Create three main sections
+        self.create_left_sidebar()
+        self.create_chat_area()
+        self.create_right_sidebar()
+        
+        # Status bar
+        self.create_status_bar()
+    
+    def create_menu_bar(self):
+        """Create menu bar"""
+        menubar = Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        # File menu
+        file_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="New Chat", command=self.new_chat, accelerator="Ctrl+N")
+        file_menu.add_command(label="Save Chat", command=self.save_chat, accelerator="Ctrl+S")
+        file_menu.add_command(label="Export Chat...", command=self.export_chat)
+        file_menu.add_separator()
+        file_menu.add_command(label="Settings", command=self.open_settings)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        
+        # Edit menu
+        edit_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+        edit_menu.add_command(label="Copy Chat", command=self.copy_chat, accelerator="Ctrl+C")
+        edit_menu.add_command(label="Clear Chat", command=self.clear_chat, accelerator="Ctrl+D")
+        edit_menu.add_separator()
+        edit_menu.add_command(label="Find in Chat...", command=self.find_in_chat, accelerator="Ctrl+F")
+        
+        # View menu
+        view_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_command(label="Toggle Dark Mode", command=self.toggle_theme)
+        view_menu.add_separator()
+        view_menu.add_command(label="Show/Hide Sidebar", command=self.toggle_sidebar)
+        
+        # Help menu
+        help_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Documentation", command=self.open_docs)
+        help_menu.add_command(label="About", command=self.show_about)
+        
+        # Bind shortcuts
+        self.root.bind("<Control-n>", lambda e: self.new_chat())
+        self.root.bind("<Control-s>", lambda e: self.save_chat())
+        self.root.bind("<Control-c>", lambda e: self.copy_chat())
+        self.root.bind("<Control-d>", lambda e: self.clear_chat())
+        self.root.bind("<Control-f>", lambda e: self.find_in_chat())
+    
+    def create_left_sidebar(self):
+        """Create left sidebar with chat history"""
+        self.sidebar_frame = tk.Frame(self.main_frame, bg=self.colors["bg_secondary"], width=250)
+        self.sidebar_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 2))
+        self.sidebar_frame.pack_propagate(False)
+        
+        # Logo
+        logo_frame = tk.Frame(self.sidebar_frame, bg=self.colors["bg_secondary"])
+        logo_frame.pack(fill=tk.X, pady=(15, 10), padx=10)
+        
+        logo_label = tk.Label(logo_frame, text="🤖", font=("Segoe UI", 28),
+                            bg=self.colors["bg_secondary"], fg=self.colors["accent"])
+        logo_label.pack()
+        
+        title_label = tk.Label(logo_frame, text="Pearl AI", font=self.fonts["title"],
+                             bg=self.colors["bg_secondary"], fg=self.colors["accent"])
+        title_label.pack()
+        
+        subtitle_label = tk.Label(logo_frame, text="AI Assistant", font=self.fonts["small"],
+                                bg=self.colors["bg_secondary"], fg=self.colors["text_secondary"])
+        subtitle_label.pack()
+        
+        # New chat button
+        new_chat_btn = tk.Button(self.sidebar_frame, text=f"{self.icons['new']} New Chat",
+                               font=self.fonts["heading"], bg=self.colors["accent"],
+                               fg="white", relief=tk.FLAT, padx=20, pady=10,
+                               command=self.new_chat)
+        new_chat_btn.pack(fill=tk.X, padx=10, pady=(0, 15))
+        
+        # Chat history label
+        history_label = tk.Label(self.sidebar_frame, text="Chat History",
+                               font=self.fonts["heading"], bg=self.colors["bg_secondary"],
+                               fg=self.colors["text"], anchor="w")
+        history_label.pack(fill=tk.X, padx=10, pady=(0, 5))
+        
+        # Chat history listbox with scrollbar
+        history_container = tk.Frame(self.sidebar_frame, bg=self.colors["bg_secondary"])
+        history_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        
+        scrollbar = tk.Scrollbar(history_container)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.history_listbox = tk.Listbox(history_container, bg=self.colors["bg_tertiary"],
+                                         fg=self.colors["text"], font=self.fonts["small"],
+                                         selectbackground=self.colors["accent"],
+                                         selectforeground="white",
+                                         yscrollcommand=scrollbar.set,
+                                         relief=tk.FLAT, borderwidth=0)
+        self.history_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scrollbar.config(command=self.history_listbox.yview)
+        self.history_listbox.bind("<<ListboxSelect>>", self.on_history_select)
+        
+        # Update history list
+        self.update_history_list()
+    
+    def create_chat_area(self):
+        """Create main chat area"""
+        chat_frame = tk.Frame(self.main_frame, bg=self.colors["bg"])
+        chat_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Chat header
+        header_frame = tk.Frame(chat_frame, bg=self.colors["bg_secondary"], height=50)
+        header_frame.pack(fill=tk.X, pady=(0, 2))
+        header_frame.pack_propagate(False)
+        
+        self.chat_title_label = tk.Label(header_frame, text="Welcome to Pearl AI!",
+                                       font=self.fonts["heading"], bg=self.colors["bg_secondary"],
+                                       fg=self.colors["text"])
+        self.chat_title_label.pack(side=tk.LEFT, padx=20)
+        
+        # Header buttons
+        btn_frame = tk.Frame(header_frame, bg=self.colors["bg_secondary"])
+        btn_frame.pack(side=tk.RIGHT, padx=10)
+        
+        tk.Button(btn_frame, text=self.icons["clear"], font=("Segoe UI", 12),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text"],
+                 relief=tk.FLAT, command=self.clear_chat).pack(side=tk.LEFT, padx=2)
+        
+        tk.Button(btn_frame, text=self.icons["export"], font=("Segoe UI", 12),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text"],
+                 relief=tk.FLAT, command=self.export_chat).pack(side=tk.LEFT, padx=2)
+        
+        tk.Button(btn_frame, text=self.icons["copy"], font=("Segoe UI", 12),
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text"],
+                 relief=tk.FLAT, command=self.copy_chat).pack(side=tk.LEFT, padx=2)
+        
+        # Chat display area
+        chat_display_frame = tk.Frame(chat_frame, bg=self.colors["bg"])
+        chat_display_frame.pack(fill=tk.BOTH, expand=True, pady=2)
+        
+        # Create text widget with scrollbar
+        self.chat_text = scrolledtext.ScrolledText(
+            chat_display_frame,
+            wrap=tk.WORD,
+            bg=self.colors["bg_tertiary"],
+            fg=self.colors["text"],
+            font=self.fonts["normal"],
+            insertbackground=self.colors["text"],
+            relief=tk.FLAT,
+            borderwidth=0,
+            padx=20,
+            pady=20
+        )
+        self.chat_text.pack(fill=tk.BOTH, expand=True)
+        self.chat_text.config(state=tk.DISABLED)
+        
+        # Input area
+        input_frame = tk.Frame(chat_frame, bg=self.colors["bg_secondary"], height=150)
+        input_frame.pack(fill=tk.X, pady=(2, 0))
+        input_frame.pack_propagate(False)
+        
+        # Input toolbar
+        toolbar_frame = tk.Frame(input_frame, bg=self.colors["bg_secondary"])
+        toolbar_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
+        
+        tk.Button(toolbar_frame, text=f"{self.icons['voice']} Voice",
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text"],
+                 relief=tk.FLAT, command=self.voice_input).pack(side=tk.LEFT, padx=(0, 5))
+        
+        tk.Button(toolbar_frame, text=f"{self.icons['file']} File",
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text"],
+                 relief=tk.FLAT, command=self.upload_file).pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(toolbar_frame, text=f"{self.icons['image']} Image",
+                 bg=self.colors["bg_tertiary"], fg=self.colors["text"],
+                 relief=tk.FLAT, command=self.upload_image).pack(side=tk.LEFT, padx=5)
+        
+        # Text input
+        self.input_text = scrolledtext.ScrolledText(
+            input_frame,
+            height=3,
+            wrap=tk.WORD,
+            bg=self.colors["bg_tertiary"],
+            fg=self.colors["text"],
+            font=self.fonts["normal"],
+            insertbackground=self.colors["text"],
+            relief=tk.FLAT,
+            borderwidth=0,
+            padx=10,
+            pady=10
+        )
+        self.input_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        self.input_text.bind("<Return>", self.on_enter_pressed)
+        self.input_text.bind("<Shift-Return>", lambda e: "break")
+        
+        # Send button
+        send_frame = tk.Frame(input_frame, bg=self.colors["bg_secondary"])
+        send_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        tk.Label(send_frame, text="Press Enter to send, Shift+Enter for new line",
+                font=self.fonts["small"], bg=self.colors["bg_secondary"],
+                fg=self.colors["text_secondary"]).pack(side=tk.LEFT)
+        
+        self.send_button = tk.Button(send_frame, text=f"{self.icons['send']} Send",
+                                   font=self.fonts["heading"], bg=self.colors["accent"],
+                                   fg="white", relief=tk.FLAT, padx=30, pady=8,
+                                   command=self.send_message)
+        self.send_button.pack(side=tk.RIGHT)
+    
+    def create_right_sidebar(self):
+        """Create right sidebar with model selection and settings"""
+        self.right_sidebar = tk.Frame(self.main_frame, bg=self.colors["bg_secondary"], width=300)
+        self.right_sidebar.pack(side=tk.RIGHT, fill=tk.Y, padx=(2, 0))
+        self.right_sidebar.pack_propagate(False)
+        
+        # Model selection
+        model_frame = tk.Frame(self.right_sidebar, bg=self.colors["bg_secondary"])
+        model_frame.pack(fill=tk.X, padx=15, pady=15)
+        
+        tk.Label(model_frame, text="🤖 AI Model", font=self.fonts["heading"],
+                bg=self.colors["bg_secondary"], fg=self.colors["text"]).pack(anchor="w")
+        
+        # Model dropdown
+        model_names = [f"{model.name} ({model.provider})" for model in AI_MODELS]
+        self.model_var = tk.StringVar(value=model_names[0])
+        self.model_dropdown = ttk.Combobox(model_frame, textvariable=self.model_var,
+                                         values=model_names, state="readonly")
+        self.model_dropdown.pack(fill=tk.X, pady=(5, 10))
+        self.model_dropdown.bind("<<ComboboxSelected>>", self.on_model_change)
+        
+        # Model info
+        self.model_info_label = tk.Label(model_frame, text=AI_MODELS[0].description,
+                                       font=self.fonts["small"], bg=self.colors["bg_secondary"],
+                                       fg=self.colors["text_secondary"], wraplength=250,
+                                       justify=tk.LEFT)
+        self.model_info_label.pack(anchor="w")
+        
+        # Capabilities
+        capabilities_frame = tk.Frame(model_frame, bg=self.colors["bg_secondary"])
+        capabilities_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        tk.Label(capabilities_frame, text="Capabilities:", font=self.fonts["small"],
+                bg=self.colors["bg_secondary"], fg=self.colors["text"]).pack(anchor="w")
+        
+        self.capabilities_label = tk.Label(capabilities_frame,
+                                         text=", ".join(AI_MODELS[0].capabilities),
+                                         font=self.fonts["small"],
+                                         bg=self.colors["bg_secondary"],
+                                         fg=self.colors["accent"], wraplength=250,
+                                         justify=tk.LEFT)
+        self.capabilities_label.pack(anchor="w")
+        
+        # Settings
+        settings_frame = tk.Frame(self.right_sidebar, bg=self.colors["bg_secondary"])
+        settings_frame.pack(fill=tk.X, padx=15, pady=15)
+        
+        tk.Label(settings_frame, text="⚙️ Settings", font=self.fonts["heading"],
+                bg=self.colors["bg_secondary"], fg=self.colors["text"]).pack(anchor="w")
+        
+        # Temperature
+        temp_frame = tk.Frame(settings_frame, bg=self.colors["bg_secondary"])
+        temp_frame.pack(fill=tk.X, pady=(10, 5))
+        
+        tk.Label(temp_frame, text=f"Temperature: {self.ai_engine.settings['temperature']}",
+                font=self.fonts["small"], bg=self.colors["bg_secondary"],
+                fg=self.colors["text"]).pack(anchor="w")
+        
+        self.temp_scale = tk.Scale(temp_frame, from_=0, to=2, resolution=0.1,
+                                  orient=tk.HORIZONTAL, bg=self.colors["bg_secondary"],
+                                  fg=self.colors["text"], troughcolor=self.colors["bg_tertiary"],
+                                  highlightbackground=self.colors["bg_secondary"])
+        self.temp_scale.set(self.ai_engine.settings['temperature'])
+        self.temp_scale.pack(fill=tk.X)
+        self.temp_scale.bind("<ButtonRelease-1>", self.on_temp_change)
+        
+        # Max Tokens
+        tokens_frame = tk.Frame(settings_frame, bg=self.colors["bg_secondary"])
+        tokens_frame.pack(fill=tk.X, pady=(10, 5))
+        
+        tk.Label(tokens_frame, text=f"Max Tokens: {self.ai_engine.settings['max_tokens']}",
+                font=self.fonts["small"], bg=self.colors["bg_secondary"],
+                fg=self.colors["text"]).pack(anchor="w")
+        
+        self.tokens_scale = tk.Scale(tokens_frame, from_=100, to=8000, resolution=100,
+                                    orient=tk.HORIZONTAL, bg=self.colors["bg_secondary"],
+                                    fg=self.colors["text"], troughcolor=self.colors["bg_tertiary"],
+                                    highlightbackground=self.colors["bg_secondary"])
+        self.tokens_scale.set(self.ai_engine.settings['max_tokens'])
+        self.tokens_scale.pack(fill=tk.X)
+        self.tokens_scale.bind("<ButtonRelease-1>", self.on_tokens_change)
+        
+        # API Keys button
+        api_btn = tk.Button(self.right_sidebar, text="🔑 Manage API Keys",
+                          font=self.fonts["normal"], bg=self.colors["accent"],
+                          fg="white", relief=tk.FLAT, command=self.manage_api_keys)
+        api_btn.pack(fill=tk.X, padx=15, pady=15)
+        
+        # Statistics
+        stats_frame = tk.Frame(self.right_sidebar, bg=self.colors["bg_secondary"])
+        stats_frame.pack(fill=tk.X, padx=15, pady=15)
+        
+        tk.Label(stats_frame, text="📊 Statistics", font=self.fonts["heading"],
+                bg=self.colors["bg_secondary"], fg=self.colors["text"]).pack(anchor="w")
+        
+        self.stats_label = tk.Label(stats_frame, text="",
+                                  font=self.fonts["small"], bg=self.colors["bg_secondary"],
+                                  fg=self.colors["text_secondary"], justify=tk.LEFT)
+        self.stats_label.pack(anchor="w", pady=(5, 0))
+    
+    def create_status_bar(self):
+        """Create status bar at bottom"""
+        self.status_bar = tk.Frame(self.root, bg=self.colors["bg_tertiary"], height=25)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_bar.pack_propagate(False)
+        
+        self.status_label = tk.Label(self.status_bar, text="Ready",
+                                   font=self.fonts["small"], bg=self.colors["bg_tertiary"],
+                                   fg=self.colors["text"])
+        self.status_label.pack(side=tk.LEFT, padx=10)
+        
+        version_label = tk.Label(self.status_bar, text="Pearl AI v1.0",
+                               font=self.fonts["small"], bg=self.colors["bg_tertiary"],
+                               fg=self.colors["text_secondary"])
+        version_label.pack(side=tk.RIGHT, padx=10)
+    
+    # =========================================================================
+    # EVENT HANDLERS
+    # =========================================================================
+    
+    def on_window_resize(self, event):
+        """Handle window resize"""
+        pass
+    
+    def on_enter_pressed(self, event):
+        """Handle Enter key in input field"""
+        if not event.state & 0x1:  # If Shift is not pressed
+            self.send_message()
+            return "break"  # Prevent default behavior
+        return None
+    
+    def on_model_change(self, event):
+        """Handle model selection change"""
+        selected_index = self.model_dropdown.current()
+        if 0 <= selected_index < len(AI_MODELS):
+            self.current_model = selected_index
+            model = AI_MODELS[selected_index]
+            self.model_info_label.config(text=model.description)
+            self.capabilities_label.config(text=", ".join(model.capabilities))
+    
+    def on_temp_change(self, event):
+        """Handle temperature change"""
+        self.ai_engine.settings['temperature'] = self.temp_scale.get()
+    
+    def on_tokens_change(self, event):
+        """Handle max tokens change"""
+        self.ai_engine.settings['max_tokens'] = self.tokens_scale.get()
+    
+    def on_history_select(self, event):
+        """Handle history item selection"""
+        selection = self.history_listbox.curselection()
+        if selection:
+            index = selection[0]
+            # Get conversation ID from listbox item
+            item_text = self.history_listbox.get(index)
+            try:
+                conv_id = int(item_text.split(":")[0].strip())
+                conversation = self.chat_manager.get_conversation(conv_id)
+                if conversation:
+                    self.chat_manager.current_conversation = conversation
+                    self.update_chat_display()
+            except:
+                pass
+    
+    # =========================================================================
+    # CHAT FUNCTIONS
+    # =========================================================================
+    
+    def send_message(self):
+        """Send message to AI"""
+        if self.is_processing:
+            return
+        
+        message = self.input_text.get("1.0", tk.END).strip()
+        if not message:
+            return
+        
+        # Add user message to chat
+        self.chat_manager.add_message("user", message)
+        self.update_chat_display()
+        
+        # Clear input
+        self.input_text.delete("1.0", tk.END)
+        
+        # Disable send button
+        self.send_button.config(state=tk.DISABLED)
+        self.is_processing = True
+        
+        # Process in thread
+        threading.Thread(target=self.process_ai_response, args=(message,), daemon=True).start()
+    
+    def process_ai_response(self, user_message: str):
+        """Process AI response in background thread"""
+        try:
+            # Get selected model
+            model = AI_MODELS[self.current_model]
+            
+            # Prepare messages for AI
+            messages = []
+            for msg in self.chat_manager.current_conversation.messages[-5:]:  # Last 5 messages
+                messages.append({"role": msg.role, "content": msg.content})
+            
+            # Update status
+            self.update_status(f"Thinking with {model.name}...")
+            
+            # Get AI response
+            response = self.ai_engine.chat_completion(
+                provider=model.provider.lower().replace(" ", ""),
+                model=model.name,
+                messages=messages,
+                temperature=self.ai_engine.settings['temperature'],
+                max_tokens=self.ai_engine.settings['max_tokens']
+            )
+            
+            if "error" in response:
+                ai_response = f"Error: {response['error']}"
+                model_name = "Error"
+                tokens = 0
+            else:
+                ai_response = response.get("content", "No response")
+                model_name = response.get("model", model.name)
+                tokens = response.get("tokens", random.randint(50, 200))
+            
+            # Add AI response to chat
+            self.chat_manager.add_message("assistant", ai_response, model_name, tokens)
+            
+            # Update statistics
+            self.total_requests += 1
+            self.total_tokens += tokens
+            
+            # Update UI
+            self.root.after(0, self.update_chat_display)
+            self.root.after(0, self.update_stats)
+            self.update_status("Ready")
+            
+        except Exception as e:
+            error_msg = f"Error: {str(e)}"
+            self.chat_manager.add_message("assistant", error_msg, "Error", 0)
+            self.root.after(0, self.update_chat_display)
+            self.update_status(f"Error: {str(e)}")
+        
+        finally:
+            self.root.after(0, lambda: self.send_button.config(state=tk.NORMAL))
+            self.root.after(0, lambda: setattr(self, 'is_processing', False))
+    
+    def update_chat_display(self):
+        """Update chat display with messages"""
+        self.chat_text.config(state=tk.NORMAL)
+        self.chat_text.delete("1.0", tk.END)
+        
+        if not self.chat_manager.current_conversation:
+            return
+        
+        # Update chat title
+        self.chat_title_label.config(text=self.chat_manager.current_conversation.title)
+        
+        # Display messages
+        for msg in self.chat_manager.current_conversation.messages:
+            if msg.role == "user":
+                self.insert_message("👤 You", msg.content, "user")
+            else:
+                self.insert_message(f"🤖 {msg.model}", msg.content, "ai")
+        
+        self.chat_text.config(state=tk.DISABLED)
+        self.chat_text.see(tk.END)
+    
+    def insert_message(self, sender: str, content: str, role: str):
+        """Insert a formatted message into chat display"""
+        # Configure tags
+        self.chat_text.tag_config("user_header", foreground="#06b6d4", 
+                                font=("Segoe UI", 11, "bold"))
+        self.chat_text.tag_config("ai_header", foreground="#8b5cf6", 
+                                font=("Segoe UI", 11, "bold"))
+        self.chat_text.tag_config("user_content", foreground="#e2e8f0")
+        self.chat_text.tag_config("ai_content", foreground="#f1f5f9")
+        self.chat_text.tag_config("separator", foreground="#475569")
+        
+        # Add message
+        header_tag = "user_header" if role == "user" else "ai_header"
+        content_tag = "user_content" if role == "user" else "ai_content"
+        
+        self.chat_text.insert(tk.END, f"{sender}\n", header_tag)
+        self.chat_text.insert(tk.END, f"{content}\n\n", content_tag)
+        self.chat_text.insert(tk.END, "─" * 50 + "\n\n", "separator")
+    
+    def update_status(self, message: str):
+        """Update status bar"""
+        self.root.after(0, lambda: self.status_label.config(text=message))
+    
+    def update_stats(self):
+        """Update statistics display"""
+        stats_text = f"• Total Requests: {self.total_requests}\n"
+        stats_text += f"• Total Tokens: {self.total_tokens:,}\n"
+        if self.chat_manager.current_conversation:
+            stats_text += f"• Current Chat Tokens: {self.chat_manager.current_conversation.token_count:,}"
+        
+        self.stats_label.config(text=stats_text)
+    
+    def update_history_list(self):
+        """Update chat history listbox"""
+        self.history_listbox.delete(0, tk.END)
+        for conv in self.chat_manager.conversations[-20:]:  # Show last 20 chats
+            # Truncate title if too long
+            title = conv.title
+            if len(title) > 30:
+                title = title[:27] + "..."
+            
+            item_text = f"{conv.id:3d}: {title}"
+            self.history_listbox.insert(tk.END, item_text)
+        
+        # Select current conversation
+        if self.chat_manager.current_conversation:
+            for i in range(self.history_listbox.size()):
+                if str(self.chat_manager.current_conversation.id) in self.history_listbox.get(i):
+                    self.history_listbox.selection_set(i)
+                    break
+    
+    # =========================================================================
+    # MENU FUNCTIONS
+    # =========================================================================
+    
+    def new_chat(self):
+        """Start a new chat"""
+        title = simpledialog.askstring("New Chat", "Enter chat title:", 
+                                      initialvalue="New Conversation")
+        if title:
+            self.chat_manager.start_new_conversation(title)
+            self.update_chat_display()
+            self.update_history_list()
+    
+    def save_chat(self):
+        """Save current chat"""
+        self.chat_manager.save_history()
+        self.update_status("Chat saved successfully!")
+    
+    def export_chat(self):
+        """Export current chat"""
+        if not self.chat_manager.current_conversation:
+            messagebox.showwarning("No Chat", "No chat to export!")
+            return
+        
+        format_choice = messagebox.askquestion("Export Format", 
+                                             "Export as JSON (Yes) or Text (No)?")
+        format_type = "json" if format_choice == "yes" else "txt"
+        
+        filename = self.chat_manager.export_conversation(
+            self.chat_manager.current_conversation.id, format_type
+        )
+        
+        if filename:
+            messagebox.showinfo("Export Successful", 
+                              f"Chat exported to:\n{filename}")
+        else:
+            messagebox.showerror("Export Failed", "Failed to export chat!")
+    
+    def copy_chat(self):
+        """Copy chat to clipboard"""
+        if not self.chat_manager.current_conversation:
+            return
+        
+        text = ""
+        for msg in self.chat_manager.current_conversation.messages:
+            sender = "You" if msg.role == "user" else "AI"
+            text += f"{sender}: {msg.content}\n\n"
+        
+        if CLIPBOARD_AVAILABLE:
+            pyperclip.copy(text)
+            self.update_status("Chat copied to clipboard!")
+        else:
+            # Fallback: show in message box
+            messagebox.showinfo("Chat Content", text[:1000] + ("..." if len(text) > 1000 else ""))
+    
+    def clear_chat(self):
+        """Clear current chat"""
+        if messagebox.askyesno("Clear Chat", "Are you sure you want to clear this chat?"):
+            self.chat_manager.start_new_conversation("Cleared Chat")
+            self.update_chat_display()
+            self.update_history_list()
+    
+    def find_in_chat(self):
+        """Find text in chat"""
+        find_window = tk.Toplevel(self.root)
+        find_window.title("Find in Chat")
+        find_window.geometry("400x150")
+        find_window.configure(bg=self.colors["bg"])
+        
+        tk.Label(find_window, text="Search for:", font=self.fonts["heading"],
+                bg=self.colors["bg"], fg=self.colors["text"]).pack(pady=10)
+        
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(find_window, textvariable=search_var,
+                              font=self.fonts["normal"], bg=self.colors["bg_tertiary"],
+                              fg=self.colors["text"], insertbackground=self.colors["text"])
+        search_entry.pack(fill=tk.X, padx=20, pady=5)
+        
+        def find_text():
+            text = search_var.get()
+            if text:
+                self.chat_text.tag_remove("search", "1.0", tk.END)
+                self.chat_text.tag_config("search", background="yellow", foreground="black")
+                
+                start_pos = "1.0"
+                while True:
+                    start_pos = self.chat_text.search(text, start_pos, stopindex=tk.END)
+                    if not start_pos:
+                        break
+                    end_pos = f"{start_pos}+{len(text)}c"
+                    self.chat_text.tag_add("search", start_pos, end_pos)
+                    start_pos = end_pos
+                    self.chat_text.see(start_pos)
+        
+        tk.Button(find_window, text="Find", command=find_text,
+                 bg=self.colors["accent"], fg="white", relief=tk.FLAT,
+                 padx=20, pady=5).pack(pady=10)
+        
+        search_entry.focus()
+    
+    def toggle_theme(self):
+        """Toggle between dark and light mode"""
+        self.dark_mode = not self.dark_mode
+        self.setup_styles()
+        # Recreate widgets with new theme
+        self.main_frame.destroy()
+        self.status_bar.destroy()
+        self.create_widgets()
+        self.update_chat_display()
+    
+    def toggle_sidebar(self):
+        """Toggle sidebar visibility"""
+        if self.sidebar_frame.winfo_ismapped():
+            self.sidebar_frame.pack_forget()
+        else:
+            self.sidebar_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 2))
+    
+    def open_settings(self):
+        """Open settings dialog"""
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("Settings")
+        settings_window.geometry("500x400")
+        settings_window.configure(bg=self.colors["bg"])
+        
+        notebook = ttk.Notebook(settings_window)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # General tab
+        general_frame = ttk.Frame(notebook)
+        notebook.add(general_frame, text="General")
+        
+        # AI tab
+        ai_frame = ttk.Frame(notebook)
+        notebook.add(ai_frame, text="AI Settings")
+        
+        # Appearance tab
+        appearance_frame = ttk.Frame(notebook)
+        notebook.add(appearance_frame, text="Appearance")
+    
+    def manage_api_keys(self):
+        """Manage API keys dialog"""
+        keys_window = tk.Toplevel(self.root)
+        keys_window.title("API Keys Management")
+        keys_window.geometry("500x300")
+        keys_window.configure(bg=self.colors["bg"])
+        
+        tk.Label(keys_window, text="Enter your API keys:", font=self.fonts["heading"],
+                bg=self.colors["bg"], fg=self.colors["text"]).pack(pady=10)
+        
+        # OpenAI
+        openai_frame = tk.Frame(keys_window, bg=self.colors["bg"])
+        openai_frame.pack(fill=tk.X, padx=20, pady=5)
+        
+        tk.Label(openai_frame, text="OpenAI API Key:", font=self.fonts["normal"],
+                bg=self.colors["bg"], fg=self.colors["text"], width=15).pack(side=tk.LEFT)
+        
+        openai_var = tk.StringVar(value=self.ai_engine.api_keys["openai"])
+        openai_entry = tk.Entry(openai_frame, textvariable=openai_var, show="*",
+                              font=self.fonts["normal"], bg=self.colors["bg_tertiary"],
+                              fg=self.colors["text"])
+        openai_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Google
+        google_frame = tk.Frame(keys_window, bg=self.colors["bg"])
+        google_frame.pack(fill=tk.X, padx=20, pady=5)
+        
+        tk.Label(google_frame, text="Google AI Key:", font=self.fonts["normal"],
+                bg=self.colors["bg"], fg=self.colors["text"], width=15).pack(side=tk.LEFT)
+        
+        google_var = tk.StringVar(value=self.ai_engine.api_keys["google"])
+        google_entry = tk.Entry(google_frame, textvariable=google_var, show="*",
+                              font=self.fonts["normal"], bg=self.colors["bg_tertiary"],
+                              fg=self.colors["text"])
+        google_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        def save_keys():
+            self.ai_engine.set_api_key("openai", openai_var.get())
+            self.ai_engine.set_api_key("google", google_var.get())
+            messagebox.showinfo("Success", "API keys saved!")
+            keys_window.destroy()
+        
+        tk.Button(keys_window, text="Save Keys", command=save_keys,
+                 bg=self.colors["accent"], fg="white", relief=tk.FLAT,
+                 padx=30, pady=10).pack(pady=20)
+    
+    def voice_input(self):
+        """Voice input (mock for now)"""
+        messagebox.showinfo("Voice Input", "Voice input feature requires additional libraries.\n"
+                                          "Install with: pip install SpeechRecognition pyaudio")
+    
+    def upload_file(self):
+        """Upload file (mock for now)"""
+        filepath = filedialog.askopenfilename(
+            title="Select file",
+            filetypes=[
+                ("All files", "*.*"),
+                ("Text files", "*.txt"),
+                ("PDF files", "*.pdf"),
+                ("Word documents", "*.doc *.docx")
+            ]
+        )
+        if filepath:
+            # For now, just add file reference to input
+            self.input_text.insert(tk.END, f"\n[File: {os.path.basename(filepath)}]\n")
+            self.update_status(f"File loaded: {os.path.basename(filepath)}")
+    
+    def upload_image(self):
+        """Upload image (mock for now)"""
+        filepath = filedialog.askopenfilename(
+            title="Select image",
+            filetypes=[("Image files", "*.jpg *.jpeg *.png *.gif *.bmp")]
+        )
+        if filepath:
+            self.input_text.insert(tk.END, f"\n[Image: {os.path.basename(filepath)}]\n")
+            self.update_status(f"Image loaded: {os.path.basename(filepath)}")
+    
+    def open_docs(self):
+        """Open documentation"""
+        webbrowser.open("https://github.com")
+    
+    def show_about(self):
+        """Show about dialog"""
+        about_text = """🤖 Pearl AI - Complete AI Assistant
+
+Version: 1.0
+
+Features:
+• Multiple AI model support
+• Chat history management
+• File and image upload
+• Adjustable AI parameters
+• Dark/Light theme
+
+This is a demonstration application.
+Add your API keys for real AI responses.
+
+Created with Python & Tkinter
+"""
+        messagebox.showinfo("About Pearl AI", about_text)
+    
+    def setup_autosave(self):
+        """Setup auto-save timer"""
+        def autosave():
+            self.chat_manager.save_history()
+            self.root.after(30000, autosave)  # Save every 30 seconds
+        
+        self.root.after(30000, autosave)
+
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
+
+def main():
+    """Main entry point"""
+    # Check for required libraries
+    print("="*60)
+    print("🤖 PEARL AI - Complete AI Assistant")
+    print("="*60)
+    print("\nChecking dependencies...")
+    
+    if not OPENAI_AVAILABLE:
+        print("⚠️  OpenAI library not installed. Install with: pip install openai")
+    if not GOOGLE_AI_AVAILABLE:
+        print("⚠️  Google AI library not installed. Install with: pip install google-generativeai")
+    if not CLIPBOARD_AVAILABLE:
+        print("⚠️  Clipboard support not available. Install with: pip install pyperclip")
+    if not PIL_AVAILABLE:
+        print("⚠️  Image support limited. Install with: pip install pillow")
+    
+    print("\n" + "="*60)
+    print("Starting Pearl AI...")
+    print("Note: Running in demo mode without API keys")
+    print("Add your API keys in Settings for real AI responses")
+    print("="*60 + "\n")
+    
+    # Create and run application
+    root = tk.Tk()
+    app = PearlAIApp(root)
+    
+    # Set window icon (if available)
+    try:
+        root.iconbitmap(default='icon.ico')
+    except:
+        pass
+    
+    # Start main loop
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        print("\n\nShutting down Pearl AI...")
+        app.chat_manager.save_history()
+        print("Chat history saved. Goodbye!")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+HOW TO RUN THE CODE:
+  Open Spyder OR Any Python Environment
+  Create a new Python file (File → New File)
+  Copy and paste ALL the code above into the file
+  Save as pearl_ai.py
+
+Keyboard Shortcuts:
+  Ctrl+N - New chat
+  Ctrl+S - Save chat
+  Ctrl+C - Copy chat
+  Ctrl+D - Clear chat
+  Ctrl+F - Find in chat
+  Enter - Send message
+  Shift+Enter - New line
+
+If you see import errors, install missing packages:
+
+      import subprocess
+      subprocess.check_call([sys.executable, "-m", "pip", "install", "openai", "google-generativeai"])
+
+Features Included:
+ 
+1. Complete AI System:5 AI Models (GPT-4, Claude 3, Gemini, Llama 3, Mistral)
+  Demo mode (works without API keys)
+  Adjustable parameters (Temperature, Max Tokens)
+
+2. Beautiful GUI:
+  Dark/Light theme toggle
+  Modern interface with Tkinter
+  Chat history sidebar
+  Menu bar with all features
+
+3. Chat Features:
+  Send messages (Enter to send, Shift+Enter for new line)
+  Copy chat to clipboard
+  Clear chat history
+  Find text in chat
