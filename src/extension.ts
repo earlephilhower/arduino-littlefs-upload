@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as quote from 'shell-quote';
 import type { ArduinoContext, BoardDetails } from 'vscode-arduino-api';
 import { platform } from 'node:os';
 import { spawn } from 'child_process';
@@ -498,11 +499,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
             if (arduinoContext.boardDetails.buildProperties['build.chip']) {
                 chip = arduinoContext.boardDetails.buildProperties['build.chip'];
             }
-            if (platform() === 'win32') {
-                imageFile = imageFile.replace(/\\/g, '/') // #117, OpenOCD on Windows seems to parse \s in name as escape chars
-                openocdPath ??= "" // In case it's undefined, make sure we can string.replace
-                openocdPath = openocdPath.replace(/\\/g, '/')
-            }
+            imageFile = quote.quote([imageFile])
             uploadOpts = ["-f", "interface/cmsis-dap.cfg", "-f", "target/" + chip +".cfg", "-s", openocdPath + "/share/openocd/scripts",
                           "-c", "init; adapter speed 5000; program "+ imageFile + " verify 0x" + fsStart.toString(16) + "; reset; exit"];
         } else {
