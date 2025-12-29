@@ -499,7 +499,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
                 chip = arduinoContext.boardDetails.buildProperties['build.chip'];
             }
             if (platform() === 'win32') {
-                imagefile = imagefile.replace(/\\/g, '/') // #117, OpenOCD on Windows seems to parse \s in name as escape chars
+                imageFile = imageFile.replace(/\\/g, '/') // #117, OpenOCD on Windows seems to parse \s in name as escape chars
             }
             uploadOpts = ["-f", "interface/cmsis-dap.cfg", "-f", "target/" + chip +".cfg", "-s", openocdPath + "/share/openocd/scripts",
                           "-c", "init; adapter speed 5000; program "+ imageFile + " verify 0x" + fsStart.toString(16) + "; reset; exit"];
