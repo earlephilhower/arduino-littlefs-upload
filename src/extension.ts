@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { ArduinoContext, BoardDetails } from 'vscode-arduino-api';
+import type { ArduinoContext, BoardDetails, Port, SketchFolder } from 'vscode-arduino-api';
 import { platform } from 'node:os';
 import { spawn } from 'child_process';
 
@@ -41,13 +41,22 @@ async function waitForTerminal(title : string) {
     return true;
 }
 
+function isBoardDetails(board?: SketchFolder['board']): board is BoardDetails {
+    return !!board && 'configOptions' in board;
+}
+
+function isDiscoveredPort(port?: SketchFolder['port']): port is Port {
+    return !!port && 'properties' in port;
+}
+
 function findTool(ctx: ArduinoContext, match : string) : string | undefined {
+    const board = ctx.currentSketch?.board;
     let found = false;
     let ret = undefined;
-    if (ctx.boardDetails !== undefined) {
-        Object.keys(ctx.boardDetails.buildProperties).forEach( (elem) => {
-            if (elem.startsWith(match) && !found && (ctx.boardDetails?.buildProperties[elem] !== undefined)) {
-                ret = ctx.boardDetails.buildProperties[elem];
+    if (isBoardDetails(board)) {
+        Object.keys(board.buildProperties).forEach( (elem) => {
+            if (elem.startsWith(match) && !found && (board.buildProperties[elem] !== undefined)) {
+                ret = board.buildProperties[elem];
                 found = true;
             }
         });
@@ -166,23 +175,25 @@ function getDefaultPartitionScheme(boardDetails : BoardDetails) : string | undef
 }
 
 function getPartitionSchemeFile(arduinoContext : ArduinoContext) {
-    if (arduinoContext.sketchPath !== undefined) {
-        let localPartitionsFile = arduinoContext.sketchPath + path.sep + "partitions.csv";
+    const sketchPath = arduinoContext.currentSketch?.sketchPath;
+    if (sketchPath !== undefined) {
+        let localPartitionsFile = sketchPath + path.sep + "partitions.csv";
         if (fs.existsSync(localPartitionsFile)) {
             writeEmitter.fire(blue("Using partition: " + green("partitions.csv in sketch folder") + "\r\n"));
             return localPartitionsFile;
         }
     }
 
-    if (arduinoContext.boardDetails === undefined) {
+    const board = arduinoContext.currentSketch?.board;
+    if (!isBoardDetails(board)) {
         // This should never happen from the state in which this is called.
         writeEmitter.fire(red("\r\n\r\nERROR: Board details is undefined\r\n"));
         return;
     }
 
-    let selectedScheme = getSelectedPartitionScheme(arduinoContext.boardDetails);
+    let selectedScheme = getSelectedPartitionScheme(board);
     if (selectedScheme === undefined) {
-        selectedScheme = getDefaultPartitionScheme(arduinoContext.boardDetails);
+        selectedScheme = getDefaultPartitionScheme(board);
         if (selectedScheme === undefined) {
             writeEmitter.fire(red("\r\n\r\nERROR: No board partition scheme found\r\n"));
             return;
@@ -192,13 +203,13 @@ function getPartitionSchemeFile(arduinoContext : ArduinoContext) {
     // Selected Partition is the filename.csv in the partitions directory
     writeEmitter.fire(blue("Using partition: ") + green(selectedScheme) + "\r\n");
 
-    let platformPath = arduinoContext.boardDetails.buildProperties["runtime.platform.path"];
+    let platformPath = board.buildProperties["runtime.platform.path"];
     return platformPath + path.sep + "tools" + path.sep + "partitions" + path.sep + selectedScheme + ".csv";
 }
 
 export function activate(context: vscode.ExtensionContext) {
     // Get the Arduino info extension loaded
-    const arduinoContext: ArduinoContext = vscode.extensions.getExtension('dankeboy36.vscode-arduino-api')?.exports;
+    const arduinoContext: ArduinoContext = vscode.extensions.getExtension('dankeboy36.boardlab')?.exports;
     if (!arduinoContext) {
         // Failed to load the Arduino API.
         vscode.window.showErrorMessage("Unable to load the Arduino IDE Context extension.");
@@ -218,7 +229,9 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
     //let str = JSON.stringify(arduinoContext, null, 4);
     //console.log(str);
 
-    if ((arduinoContext.boardDetails === undefined) ||  (arduinoContext.fqbn === undefined)){
+    const boardDetails = arduinoContext.currentSketch?.board;
+    const sketchPath = arduinoContext.currentSketch?.sketchPath;
+    if (!isBoardDetails(boardDetails) || !sketchPath) {
         vscode.window.showErrorMessage("Board details not available. Compile the sketch once.");
         return;
     }
@@ -232,9 +245,9 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
 
     writeEmitter.fire(bold("LittleFS Filesystem " + (doUpload ? "Uploader" : "Builder" ) + " v" + String(context.extension.packageJSON.version) + " -- https://github.com/earlephilhower/arduino-littlefs-upload\r\n\r\n"));
 
-    writeEmitter.fire(blue(" Sketch Path: ") + green("" + arduinoContext.sketchPath) + "\r\n");
+    writeEmitter.fire(blue(" Sketch Path: ") + green("" + sketchPath) + "\r\n");
     // Need to have a data folder present, or this isn't gonna work...
-    let dataFolder = arduinoContext.sketchPath + path.sep + "data";
+    let dataFolder = sketchPath + path.sep + "data";
     writeEmitter.fire(blue("   Data Path: ") + green(dataFolder) + "\r\n");
     if (!fs.existsSync(dataFolder)) {
         writeEmitter.fire(red("\r\n\r\nERROR: No data folder found at " + dataFolder) + "\r\n");
@@ -248,12 +261,12 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
     let esp8266 = false;
     let esp32 = false;
     let esp32variant = "";
-    switch (arduinoContext.fqbn.split(':')[1]) {
+    switch (boardDetails.fqbn.split(':')[1]) {
         case "rp2040": {
             writeEmitter.fire(blue("      Device: ") + green("RP2040 series") + "\r\n");
             pico = true;
-            rp2350 = arduinoContext.boardDetails.buildProperties['build.chip'].startsWith("rp2350");
-            uploadmethod = getSelectedUploadMethod(arduinoContext.boardDetails);
+            rp2350 = boardDetails.buildProperties['build.chip'].startsWith("rp2350");
+            uploadmethod = getSelectedUploadMethod(boardDetails);
             writeEmitter.fire(blue("Upload Using: ") + green(uploadmethod) + "\r\n");
             break;
         }
@@ -264,7 +277,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         }
         case "esp32": {
             esp32 = true;
-            esp32variant = arduinoContext.boardDetails.buildProperties['build.mcu'];
+            esp32variant = boardDetails.buildProperties['build.mcu'];
             writeEmitter.fire(blue("      Device: ") + green("ESP32 series, model " + esp32variant) + "\r\n");
             break;
         }
@@ -321,13 +334,13 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         writeEmitter.fire(blue("       Start: ") + green("0x" + fsStart.toString(16)) + "\r\n");
         writeEmitter.fire(blue("         End: ") + green("0x" + fsEnd.toString(16)) + "\r\n");
 
-        uploadSpeed = Number(arduinoContext.boardDetails.buildProperties["upload.speed"]);
+        uploadSpeed = Number(boardDetails.buildProperties["upload.speed"]);
         // Fixed for ESP32
         page = 256;
         blocksize = 4096;
     }
 
-    arduinoContext.boardDetails.configOptions.forEach( (opt) => {
+    boardDetails.configOptions.forEach( (opt) => {
         let optSeek = pico ? "flash" : "eesz";
         let startMarker = pico ? "fs_start" : "spiffs_start";
         let endMarker = pico ? "fs_end" : "spiffs_end";
@@ -335,14 +348,14 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
             opt.values.forEach( (itm) => {
                 if (itm.selected) {
                     let menustr = "menu." + optSeek + "." + itm.value + ".build.";
-                    fsStart = Number(arduinoContext.boardDetails?.buildProperties[menustr + startMarker]);
-                    fsEnd = Number(arduinoContext.boardDetails?.buildProperties[menustr + endMarker]);
+                    fsStart = Number(boardDetails.buildProperties[menustr + startMarker]);
+                    fsEnd = Number(boardDetails.buildProperties[menustr + endMarker]);
                     if (pico) { // Fixed-size always
                         page = 256;
                         blocksize = 4096;
                     } else if (esp8266) {
-                        page = Number(arduinoContext.boardDetails?.buildProperties[menustr + "spiffs_pagesize"]);
-                        blocksize = Number(arduinoContext.boardDetails?.buildProperties[menustr + "spiffs_blocksize"]);
+                        page = Number(boardDetails.buildProperties[menustr + "spiffs_pagesize"]);
+                        blocksize = Number(boardDetails.buildProperties[menustr + "spiffs_blocksize"]);
                     }
                 }
             });
@@ -378,6 +391,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         writeEmitter.fire(red("\r\n\r\nERROR: mklittlefs not found!\r\n" + resetStyle));
     }
 
+    const port = arduinoContext.currentSketch?.port;
     let network = false;
     let networkPort = 0;
     let serialPort = "";
@@ -385,27 +399,27 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         serialPort = "picotool";
     } else if (uploadmethod === "picoprobe_cmsis_dap") {
         serialPort = "openocd";
-    } else if (arduinoContext.port?.address === undefined) {
+    } else if (port?.address === undefined) {
         if (doUpload) {
             writeEmitter.fire(red("\r\n\r\nERROR: No port specified, check IDE menus.\r\n"));
             return;
         }
     } else {
-        serialPort = arduinoContext.port?.address;
+        serialPort = port.address;
     }
-    if (arduinoContext.port?.protocol === "network") {
-        if (!arduinoContext.port?.properties.port) {
+    if (isDiscoveredPort(port) && port.protocol === "network") {
+        if (port.properties.port) {
             writeEmitter.fire(red("\r\n\r\nERROR: Network upload but port specified, check IDE menus.\r\n"));
             return;
         }
-        networkPort = Number(arduinoContext.port?.properties.port);
+        networkPort = Number(port.properties.port);
         network = true;
         writeEmitter.fire(blue("Network Info: ") + green(serialPort + ":" + String(networkPort)) + "\r\n");
-    } else if (arduinoContext.port?.protocol === "serial") {
+    } else if (port?.protocol === "serial") {
         writeEmitter.fire(blue(" Serial Port: ") + green(serialPort) + "\r\n");
     } else {
         if (doUpload) {
-            writeEmitter.fire(red("\r\n\r\nERROR: Unknown upload method '" + String(arduinoContext.port?.properties.port) + "' specified, check IDE menus.\r\n"));
+            writeEmitter.fire(red("\r\n\r\nERROR: Unknown upload method '" + String(isDiscoveredPort(port) ? port.properties.port : `${port?.protocol}:/${port?.address}`) + "' specified, check IDE menus.\r\n"));
             return;
         }
     }
@@ -442,7 +456,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
     if (doUpload) {
         imageFile = tmp.tmpNameSync({postfix: ".littlefs.bin"});
     } else {
-        imageFile = arduinoContext.sketchPath + path.sep + "mklittlefs.bin";
+        imageFile = sketchPath + path.sep + "mklittlefs.bin";
         writeEmitter.fire(blue("Output File:  ") + green(imageFile) + "\r\n");
     }
 
@@ -466,7 +480,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
 
     let conversion = false
     if (pico) {
-        if (Number(arduinoContext.boardDetails?.buildProperties['version'].split('.')[0]) > 3) {
+        if (Number(boardDetails.buildProperties['version'].split('.')[0]) > 3) {
             if (rp2350) {
                 // Pico 4.x needs a preparation stage for the RP2350
                 writeEmitter.fire(bold("\r\n4.0 or above\r\n"));
@@ -495,8 +509,8 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         } else if (uploadmethod === "picoprobe_cmsis_dap") {
             cmdApp = openocd;
             let chip = "rp2040";
-            if (arduinoContext.boardDetails.buildProperties['build.chip']) {
-                chip = arduinoContext.boardDetails.buildProperties['build.chip'];
+            if (boardDetails.buildProperties['build.chip']) {
+                chip = boardDetails.buildProperties['build.chip'];
             }
             imageFile = imageFile.replace(/\\/g, "\\\\").replace(/ /g, "\\ ")
             uploadOpts = ["-f", "interface/cmsis-dap.cfg", "-f", "target/" + chip +".cfg", "-s", openocdPath + "/share/openocd/scripts",
@@ -538,8 +552,8 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
                 uploadOpts.unshift(espota + ".py"); // Need to call Python3
             }
         } else {
-            let flashMode = arduinoContext.boardDetails.buildProperties["build.flash_mode"];
-            let flashFreq = arduinoContext.boardDetails.buildProperties["build.flash_freq"];
+            let flashMode = boardDetails.buildProperties["build.flash_mode"];
+            let flashFreq = boardDetails.buildProperties["build.flash_freq"];
             let espTool = "esptool";
             let espToolPath = findTool(arduinoContext, "runtime.tools.esptool_py.path");
             if (espToolPath) {
