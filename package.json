@@ -50,5 +50,8 @@
   "dependencies": {
     "tmp": "^0.2.1",
     "vscode-arduino-api": "^0.2.1"
-  }
+  },
+  "extensionDependencies": [
+    "dankeboy36.boardlab"
+  ]
 }
