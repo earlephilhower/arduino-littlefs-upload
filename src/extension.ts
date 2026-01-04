@@ -94,7 +94,7 @@ function color(
 
 function fancyParseInt(str: string) : number {
     var up = str.toUpperCase().trim();
-    if (up == "") {
+    if (up === "") {
         return 0;
     }
     if (up.indexOf('0X') >= 0) {
@@ -303,12 +303,12 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
             if (partitionEntry.length > 4) {
                 var offset = fancyParseInt(partitionEntry[3]);
                 var length = fancyParseInt(partitionEntry[4]);
-                if (offset == 0) {
+                if (offset === 0) {
                     offset = lastend;
                 }
                 lastend = offset + length;
                 var parttype = partitionEntry[2].toUpperCase().trim();
-                if ((parttype == "SPIFFS") || (parttype == "LITTLEFS")) {
+                if ((parttype === "SPIFFS") || (parttype === "LITTLEFS")) {
                     fsStart = offset;
                     fsEnd = fsStart + length;
                 }
@@ -464,7 +464,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         return;
     }
 
-    let conversion = false
+    let conversion = false;
     if (pico) {
         if (Number(arduinoContext.boardDetails?.buildProperties['version'].split('.')[0]) > 3) {
             if (rp2350) {
@@ -498,7 +498,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
             if (arduinoContext.boardDetails.buildProperties['build.chip']) {
                 chip = arduinoContext.boardDetails.buildProperties['build.chip'];
             }
-            imageFile = imageFile.replace(/\\/g, "\\\\").replace(/ /g, "\\ ")
+            imageFile = imageFile.replace(/\\/g, "\\\\").replace(/ /g, "\\ ");
             uploadOpts = ["-f", "interface/cmsis-dap.cfg", "-f", "target/" + chip +".cfg", "-s", openocdPath + "/share/openocd/scripts",
                           "-c", "init; adapter speed 5000; program "+ imageFile + " verify 0x" + fsStart.toString(16) + "; reset; exit"];
         } else {
