@@ -111,13 +111,12 @@ function fancyParseInt(str: string) : number {
 // Execute a command and display it's output in the terminal
 async function runCommand(exe : string, opts : any[]) {
     const cmd = spawn(exe, opts);
-    for await (const chunk of cmd.stdout) {
+    cmd.stdout.on('data', function(chunk) {
         writeEmitter.fire(String(chunk).replace(/\n/g, "\r\n"));
-    }
-    for await (const chunk of cmd.stderr) {
-        // Write stderr in red
+    });
+    cmd.stderr.on('data', function(chunk) {
         writeEmitter.fire("\x1b[31m" + String(chunk).replace(/\n/g, "\r\n") + "\x1b[0m");
-    }
+    });
     // Wait until the executable finishes
     let exitCode = await new Promise( (resolve, reject) => {
         cmd.on('close', resolve);
