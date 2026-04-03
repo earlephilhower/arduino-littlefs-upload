@@ -2,30 +2,59 @@
   "name": "arduino-littlefs-upload",
   "displayName": "arduino-littlefs-upload",
   "description": "Build and uploads LittleFS filesystems for the Arduino-Pico RP2040 core, ESP8266 core, or ESP32 core under Arduino IDE 2.2.1 or higher",
-  "version": "1.6.3",
+  "version": "2.0.0",
   "engines": {
     "vscode": "^1.82.0"
   },
   "license": "MIT",
+  "contributors": [
+    {
+      "name": "HamzaYslmn",
+      "url": "https://github.com/HamzaYslmn"
+    }
+  ],
   "repository": {
-    "url": "https://github.com/earlephilhower/arduino-littlefs-upload"
+    "url": "https://github.com/HamzaYslmn/arduino-littlefs-upload"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "*"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "arduino-littlefs-upload.uploadLittleFS",
-        "title": "Upload LittleFS to Pico/ESP8266/ESP32"
+        "title": "Upload LittleFS to Pico/ESP8266/ESP32",
+        "icon": "$(cloud-upload)"
       },
       {
         "command": "arduino-littlefs-upload.buildLittleFS",
-        "title": "Build LittleFS image in sketch directory"
+        "title": "Build LittleFS image in sketch directory",
+        "icon": "$(package)"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "littlefs",
+          "title": "FS",
+          "icon": "resources/littlefs.svg"
+        }
+      ]
+    },
+    "views": {
+      "littlefs": [
+        {
+          "id": "littlefs-actions",
+          "name": "LittleFS Upload",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {}
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -45,7 +74,5 @@
     "typescript": "^5.1.6",
     "vscode-arduino-api": "ide2"
   },
-  "dependencies": {
-    "tmp": "^0.2.1"
-  }
+  "dependencies": {}
 }
