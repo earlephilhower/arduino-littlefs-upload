@@ -300,7 +300,7 @@ class LittleFSViewProvider implements vscode.WebviewViewProvider {
             } else if (msg.command === 'addFiles') {
                 const sketchPath = this._getSketchPath();
                 if (!sketchPath) { vscode.window.showErrorMessage('No sketch open.'); return; }
-                const dataPath = path.join(sketchPath, 'data');
+                const dataPath = path.join(sketchPath, 'data', msg.targetDir || '');
                 if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
                 const uris = await vscode.window.showOpenDialog({ canSelectMany: true, openLabel: 'Add to data/' });
                 if (uris) {
@@ -310,28 +310,74 @@ class LittleFSViewProvider implements vscode.WebviewViewProvider {
                     }
                     this.refreshFiles();
                 }
+            } else if (msg.command === 'newFile') {
+                // MARK: New file — prompt name, create empty file
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { vscode.window.showErrorMessage('No sketch open.'); return; }
+                const name = await vscode.window.showInputBox({ prompt: 'New file name', placeHolder: 'filename.txt' });
+                if (!name) { return; }
+                const dataPath = path.join(sketchPath, 'data', msg.targetDir || '');
+                if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
+                const dest = uniquePath(dataPath, name);
+                fs.writeFileSync(dest, '');
+                this.refreshFiles();
+            } else if (msg.command === 'newFolder') {
+                // MARK: New folder — prompt name, create empty folder
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { vscode.window.showErrorMessage('No sketch open.'); return; }
+                const name = await vscode.window.showInputBox({ prompt: 'New folder name', placeHolder: 'folder' });
+                if (!name) { return; }
+                const dataPath = path.join(sketchPath, 'data', msg.targetDir || '');
+                if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
+                const dest = uniquePath(dataPath, name);
+                fs.mkdirSync(dest, { recursive: true });
+                this.refreshFiles();
             } else if (msg.command === 'addFolder') {
                 // MARK: Add folder — recursively copy folder into data/
                 const sketchPath = this._getSketchPath();
                 if (!sketchPath) { vscode.window.showErrorMessage('No sketch open.'); return; }
-                const dataPath = path.join(sketchPath, 'data');
+                const dataPath = path.join(sketchPath, 'data', msg.targetDir || '');
                 if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
                 const uris = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Add folder to data/' });
                 if (uris && uris.length > 0) {
                     const srcDir = uris[0].fsPath;
                     const folderName = path.basename(srcDir);
-                    const destDir = path.join(dataPath, folderName);
+                    const destDir = uniquePath(dataPath, folderName);
                     fs.cpSync(srcDir, destDir, { recursive: true });
                     this.refreshFiles();
                 }
             } else if (msg.command === 'dropFiles') {
                 const sketchPath = this._getSketchPath();
                 if (!sketchPath) { return; }
-                const dataPath = path.join(sketchPath, 'data');
-                if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
+                const targetBase = msg.targetDir ? path.join(sketchPath, 'data', msg.targetDir) : path.join(sketchPath, 'data');
+                if (!fs.existsSync(targetBase)) { fs.mkdirSync(targetBase, { recursive: true }); }
+                // Create empty folders first (with auto-rename)
+                const folderRenameMap: Record<string, string> = {};
+                if (msg.folders) {
+                    for (const folder of msg.folders as string[]) {
+                        const parts = folder.split('/');
+                        const topLevel = parts[0];
+                        if (!folderRenameMap[topLevel]) {
+                            const renamedTop = path.basename(uniquePath(targetBase, topLevel));
+                            folderRenameMap[topLevel] = renamedTop;
+                        }
+                        parts[0] = folderRenameMap[topLevel];
+                        const dest = path.join(targetBase, parts.join(path.sep));
+                        if (!fs.existsSync(dest)) { fs.mkdirSync(dest, { recursive: true }); }
+                    }
+                }
                 for (const file of msg.files as { name: string; data: string }[]) {
                     const buf = Buffer.from(file.data, 'base64');
-                    const dest = uniquePath(dataPath, file.name);
+                    // Remap top-level folder name if it was renamed
+                    let fileName = file.name;
+                    const parts = fileName.split('/');
+                    if (parts.length > 1 && folderRenameMap[parts[0]]) {
+                        parts[0] = folderRenameMap[parts[0]];
+                        fileName = parts.join('/');
+                    }
+                    const dir = path.join(targetBase, path.dirname(fileName));
+                    if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+                    const dest = uniquePath(dir, path.basename(fileName));
                     fs.writeFileSync(dest, buf);
                 }
                 this.refreshFiles();
