@@ -38,6 +38,11 @@
       {
         "command": "arduino-littlefs-upload.toggleTopBarFS",
         "title": "Toggle FS Top Bar"
+      },
+      {
+        "command": "arduino-littlefs-upload.clearTerminal",
+        "title": "Clear Terminal",
+        "icon": "$(clear-all)"
       }
     ],
     "viewsContainers": {
@@ -58,7 +63,15 @@
         }
       ]
     },
-    "menus": {}
+    "menus": {
+      "view/title": [
+        {
+          "command": "arduino-littlefs-upload.clearTerminal",
+          "when": "view =~ /littlefs/",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

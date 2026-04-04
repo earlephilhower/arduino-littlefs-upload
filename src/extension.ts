@@ -295,9 +295,6 @@ class LittleFSViewProvider implements vscode.WebviewViewProvider {
                 vscode.commands.executeCommand(`arduino-${EXT_TAG}-upload.upload${EXT_NAME}`);
             } else if (msg.command === 'build') {
                 vscode.commands.executeCommand(`arduino-${EXT_TAG}-upload.build${EXT_NAME}`);
-            } else if (msg.command === 'clearOutput') {
-                // MARK: Clear the pseudo terminal
-                if (writerReady) { writeEmitter.fire(clear + resetStyle); }
             } else if (msg.command === 'refresh') {
                 this.refreshFiles();
             } else if (msg.command === 'addFiles') {
@@ -463,6 +460,11 @@ export function activate(context: vscode.ExtensionContext) {
         doOperation(context, ctx, false);
     });
     context.subscriptions.push(disposable2);
+
+    // MARK: Clear terminal command — shown in view title bar
+    context.subscriptions.push(vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.clearTerminal`, () => {
+        if (writerReady) { writeEmitter.fire(clear + resetStyle); }
+    }));
 
     // MARK: Toggle FS Top Bar — patch/unpatch bundle.js, with elevation for macOS/Linux
     context.subscriptions.push(vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.toggleTopBarFS`, async () => {

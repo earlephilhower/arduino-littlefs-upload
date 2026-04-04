@@ -154,9 +154,6 @@ export function getWebviewHtml(): string {
     <button class="btn btn-build" onclick="build()">
       <span class="icon">&#128230;</span> Build
     </button>
-    <button class="btn btn-build" onclick="clearOutput()">
-      <span class="icon">&#128465;</span> Clear
-    </button>
   </div>
 
   <div class="drop-zone" id="dropZone">
@@ -179,7 +176,6 @@ export function getWebviewHtml(): string {
     const vscode = acquireVsCodeApi();
     function upload() { vscode.postMessage({command: 'upload'}); }
     function build() { vscode.postMessage({command: 'build'}); }
-    function clearOutput() { vscode.postMessage({command: 'clearOutput'}); }
     function refresh() { vscode.postMessage({command: 'refresh'}); }
     function addFiles() { vscode.postMessage({command: 'addFiles'}); }
     function addFolder() { vscode.postMessage({command: 'addFolder'}); }
