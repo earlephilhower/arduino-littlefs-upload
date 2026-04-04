@@ -6,6 +6,10 @@ import { platform, tmpdir } from 'node:os';
 import { spawn } from 'child_process';
 import { getWebviewHtml } from './ui';
 
+// MARK: Extension identity — change here if the extension is renamed
+const EXT_TAG  = 'littlefs';   // container / ID tag (lowercase, kebab-friendly)
+const EXT_NAME = 'LittleFS';   // human-readable display name
+
 const writeEmitter = new vscode.EventEmitter<string>();
 let writerReady : boolean = false;
 
@@ -288,11 +292,11 @@ class LittleFSViewProvider implements vscode.WebviewViewProvider {
         // MARK: Handle messages from webview
         webviewView.webview.onDidReceiveMessage(async msg => {
             if (msg.command === 'upload') {
-                vscode.commands.executeCommand('arduino-littlefs-upload.uploadLittleFS');
+                vscode.commands.executeCommand(`arduino-${EXT_TAG}-upload.upload${EXT_NAME}`);
             } else if (msg.command === 'build') {
-                vscode.commands.executeCommand('arduino-littlefs-upload.buildLittleFS');
+                vscode.commands.executeCommand(`arduino-${EXT_TAG}-upload.build${EXT_NAME}`);
             } else if (msg.command === 'clearOutput') {
-                // MARK: Clear the LittleFS pseudo terminal
+                // MARK: Clear the pseudo terminal
                 if (writerReady) { writeEmitter.fire(clear + resetStyle); }
             } else if (msg.command === 'refresh') {
                 this.refreshFiles();
@@ -366,7 +370,42 @@ class LittleFSViewProvider implements vscode.WebviewViewProvider {
 
 // ── Terminal helpers ────────────────────────────────────────
 
+// MARK: Nuke — patch Arduino IDE to hide our menu bar entry (JUST EXT_TAG)
+// If IDE updates change the target code, patch silently skips (FS returns but IDE is safe).
+// Returns true + reloads the window when a fresh patch is applied; caller should bail out.
+function nukeMenuEntry(): boolean {
+    try {
+        const bundlePath = path.resolve(vscode.env.appRoot, 'lib', 'frontend', 'bundle.js');
+        // Security: ensure resolved path stays inside appRoot
+        if (!bundlePath.startsWith(path.resolve(vscode.env.appRoot))) { return false; }
+        if (!fs.existsSync(bundlePath)) { return false; }
+
+        const pristine = 'const i=this.escapeAmpersand(t);return this.menu=i,i';
+        const patched  = `const i=this.escapeAmpersand(t.filter(e=>!(e.id&&e.id.includes("${EXT_TAG}")&&!e.submenu)));return this.menu=i,i`;
+        const content = fs.readFileSync(bundlePath, 'utf8');
+
+        if (content.includes(patched)) { return false; } // already patched
+        if (content.includes(pristine)) {
+            // Check write permission before attempting patch (macOS/Linux may be read-only)
+            try { fs.accessSync(bundlePath, fs.constants.W_OK); }
+            catch { console.warn(`[${EXT_NAME}] No write permission to bundle.js — "FS" menu entry cannot be hidden.`); return false; }
+
+            const result = content.replace(pristine, patched);
+            // Verify exactly one replacement and size delta matches
+            if (result.length !== content.length + (patched.length - pristine.length)) { return false; }
+            fs.writeFileSync(bundlePath, result, 'utf8');
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+            return true; // caller should return early — window is reloading
+        }
+
+        console.warn(`[${EXT_NAME}] Menu patch skipped: IDE bundle.js has changed. "FS" may appear in the top menu bar.`);
+    } catch (e) { console.warn(`[${EXT_NAME}] Menu patch error:`, e); }
+    return false;
+}
+
 export function activate(context: vscode.ExtensionContext) {
+    if (nukeMenuEntry()) { return; }
+
     // Lazy Arduino context — resolved on first use
     let arduinoContext: ArduinoContext | undefined;
     function getArduinoContext(): ArduinoContext | undefined {
@@ -378,12 +417,12 @@ export function activate(context: vscode.ExtensionContext) {
 
     // MARK: Register sidebar first (before Arduino API check so icon always appears)
     const viewProvider = new LittleFSViewProvider(() => getArduinoContext()?.sketchPath);
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider('littlefs-actions', viewProvider, {
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(`${EXT_TAG}-actions`, viewProvider, {
         webviewOptions: { retainContextWhenHidden: true }
     }));
 
     // Register the upload command
-    const disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', async () => {
+    const disposable = vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.upload${EXT_NAME}`, async () => {
         const ctx = getArduinoContext();
         if (!ctx) { vscode.window.showErrorMessage("Unable to load the Arduino IDE Context extension."); return; }
         doOperation(context, ctx, true);
@@ -391,7 +430,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(disposable);
 
     // Register the build command
-    const disposable2 = vscode.commands.registerCommand('arduino-littlefs-upload.buildLittleFS', async () => {
+    const disposable2 = vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.build${EXT_NAME}`, async () => {
         const ctx = getArduinoContext();
         if (!ctx) { vscode.window.showErrorMessage("Unable to load the Arduino IDE Context extension."); return; }
         doOperation(context, ctx, false);
@@ -408,7 +447,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         return;
     }
 
-    if (!await waitForTerminal("LittleFS Upload")) {
+    if (!await waitForTerminal(`${EXT_NAME} Upload`)) {
         vscode.window.showErrorMessage("Unable to open upload terminal");
         return;
     }
@@ -416,7 +455,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
     // Clear the terminal
     writeEmitter.fire(clear + resetStyle);
 
-    writeEmitter.fire(bold("LittleFS Filesystem " + (doUpload ? "Uploader" : "Builder" ) + " v" + String(context.extension.packageJSON.version) + " -- https://github.com/HamzaYslmn/arduino-littlefs-upload\r\n\r\n"));
+    writeEmitter.fire(bold(`${EXT_NAME} Filesystem ` + (doUpload ? "Uploader" : "Builder" ) + " v" + String(context.extension.packageJSON.version) + ` -- https://github.com/HamzaYslmn/arduino-${EXT_TAG}-upload\r\n\r\n`));
 
     writeEmitter.fire(blue(" Sketch Path: ") + green("" + arduinoContext.sketchPath) + "\r\n");
     // Need to have a data folder present, or this isn't gonna work...
@@ -624,7 +663,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
 
     let imageFile = "";
     if (doUpload) {
-        imageFile = path.join(tmpdir(), `littlefs-${Date.now()}.bin`);
+        imageFile = path.join(tmpdir(), `${EXT_TAG}-${Date.now()}.bin`);
     } else {
         imageFile = arduinoContext.sketchPath + path.sep + "mklittlefs.bin";
         writeEmitter.fire(blue("Output File:  ") + green(imageFile) + "\r\n");
@@ -633,7 +672,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
     let buildOpts =  ["-c", dataFolder, "-p", String(page), "-b", String(blocksize), "-s", String(fsEnd - fsStart), imageFile];
 
     // All mklittlefs take the same options, so run in common
-    writeEmitter.fire(bold("\r\nBuilding LittleFS filesystem\r\n"));
+    writeEmitter.fire(bold(`\r\nBuilding ${EXT_NAME} filesystem\r\n`));
     writeEmitter.fire(blue("Command Line: ") + green(mklittlefs + " " + buildOpts.join(" ")) + "\r\n");
 
     let exitCode = (await runCommand(mklittlefs, buildOpts)).code;
@@ -644,7 +683,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
 
     if (!doUpload) {
         writeEmitter.fire(bold("\r\nCompleted build.\r\n\r\n"));
-        vscode.window.showInformationMessage("LittleFS build completed!");
+        vscode.window.showInformationMessage(`${EXT_NAME} build completed!`);
         return;
     }
 
@@ -763,7 +802,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         }
     }
 
-    writeEmitter.fire(bold("\r\nUploading LittleFS filesystem\r\n"));
+    writeEmitter.fire(bold(`\r\nUploading ${EXT_NAME} filesystem\r\n`));
     writeEmitter.fire(blue("Command Line: ") + green(cmdApp + " " + uploadOpts.join(" ") + "\r\n"));
 
     // MARK: Try upload — if port busy, toggle serial monitor and retry
@@ -792,7 +831,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
     }
 
     writeEmitter.fire(bold("\r\nCompleted upload.\r\n\r\n"));
-    vscode.window.showInformationMessage("LittleFS upload completed!");
+    vscode.window.showInformationMessage(`${EXT_NAME} upload completed!`);
 }
 
 export function deactivate() { }
