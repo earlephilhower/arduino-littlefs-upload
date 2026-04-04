@@ -2,8 +2,13 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ArduinoContext, BoardDetails } from 'vscode-arduino-api';
-import { platform } from 'node:os';
+import { platform, tmpdir } from 'node:os';
 import { spawn } from 'child_process';
+import { getWebviewHtml } from './ui';
+
+// MARK: Extension identity — change here if the extension is renamed
+const EXT_TAG  = 'littlefs';   // container / ID tag (lowercase, kebab-friendly)
+const EXT_NAME = 'LittleFS';   // human-readable display name
 
 const writeEmitter = new vscode.EventEmitter<string>();
 let writerReady : boolean = false;
@@ -109,19 +114,23 @@ function fancyParseInt(str: string) : number {
 }
 
 // Execute a command and display it's output in the terminal
-async function runCommand(exe : string, opts : any[]) {
+async function runCommand(exe : string, opts : any[]): Promise<{ code: number; stderr: string }> {
     const cmd = spawn(exe, opts);
+    let stderrBuf = '';
     cmd.stdout.on('data', function(chunk) {
         writeEmitter.fire(String(chunk).replace(/\n/g, "\r\n"));
     });
     cmd.stderr.on('data', function(chunk) {
-        writeEmitter.fire("\x1b[31m" + String(chunk).replace(/\n/g, "\r\n") + "\x1b[0m");
+        const text = String(chunk);
+        stderrBuf += text;
+        writeEmitter.fire("\x1b[31m" + text.replace(/\n/g, "\r\n") + "\x1b[0m");
     });
     // Wait until the executable finishes
-    let exitCode = await new Promise( (resolve, reject) => {
-        cmd.on('close', resolve);
+    let exitCode = await new Promise<number>( (resolve, reject) => {
+        cmd.on('close', (code: number) => resolve(code));
+        cmd.on('error', (err: any) => resolve(-1));
     });
-    return exitCode;
+    return { code: exitCode, stderr: stderrBuf };
 }
 
 function getSelectedUploadMethod(boardDetails : BoardDetails) : string {
@@ -195,22 +204,369 @@ function getPartitionSchemeFile(arduinoContext : ArduinoContext) {
     return platformPath + path.sep + "tools" + path.sep + "partitions" + path.sep + selectedScheme + ".csv";
 }
 
-export function activate(context: vscode.ExtensionContext) {
-    // Get the Arduino info extension loaded
-    const arduinoContext: ArduinoContext = vscode.extensions.getExtension('dankeboy36.vscode-arduino-api')?.exports;
-    if (!arduinoContext) {
-        // Failed to load the Arduino API.
-        vscode.window.showErrorMessage("Unable to load the Arduino IDE Context extension.");
-        return;
+// ── Sidebar WebviewView ─────────────────────────────────────
+
+// MARK: File listing helper — recursively lists data/ folder contents
+function listDataFolder(dirPath: string, basePath: string): { name: string; relPath: string; size: number; isDir: boolean }[] {
+    const results: { name: string; relPath: string; size: number; isDir: boolean }[] = [];
+    if (!fs.existsSync(dirPath)) { return results; }
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    // Sort: directories first, then files, alphabetically within each group
+    entries.sort((a, b) => {
+        if (a.isDirectory() && !b.isDirectory()) { return -1; }
+        if (!a.isDirectory() && b.isDirectory()) { return 1; }
+        return a.name.localeCompare(b.name);
+    });
+    for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        const relPath = path.relative(basePath, fullPath).replace(/\\/g, '/');
+        if (entry.isDirectory()) {
+            results.push({ name: entry.name, relPath, size: 0, isDir: true });
+            results.push(...listDataFolder(fullPath, basePath));
+        } else {
+            const stat = fs.statSync(fullPath);
+            results.push({ name: entry.name, relPath, size: stat.size, isDir: false });
+        }
+    }
+    return results;
+}
+
+function formatSize(bytes: number): string {
+    if (bytes < 1024) { return bytes + ' B'; }
+    if (bytes < 1024 * 1024) { return (bytes / 1024).toFixed(1) + ' KB'; }
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// MARK: Auto-rename — hello.txt → hello (1).txt → hello (2).txt
+function uniquePath(destDir: string, fileName: string): string {
+    let destPath = path.join(destDir, fileName);
+    if (!fs.existsSync(destPath)) { return destPath; }
+    const ext = path.extname(fileName);
+    const base = path.basename(fileName, ext);
+    let i = 1;
+    while (fs.existsSync(destPath)) {
+        destPath = path.join(destDir, `${base} (${i})${ext}`);
+        i++;
+    }
+    return destPath;
+}
+
+class LittleFSViewProvider implements vscode.WebviewViewProvider {
+    private _view?: vscode.WebviewView;
+    private _watcher?: vscode.FileSystemWatcher;
+    private _getSketchPath: () => string | undefined;
+
+    constructor(getSketchPath: () => string | undefined) {
+        this._getSketchPath = getSketchPath;
     }
 
+    // MARK: Send file listing to webview
+    refreshFiles() {
+        if (!this._view) { return; }
+        const sketchPath = this._getSketchPath();
+        if (!sketchPath) {
+            this._view.webview.postMessage({ command: 'fileList', files: [], dataPath: '' });
+            return;
+        }
+        const dataPath = path.join(sketchPath, 'data');
+        const files = listDataFolder(dataPath, dataPath);
+        this._view.webview.postMessage({ command: 'fileList', files, dataPath });
+
+        // MARK: Watch data/ folder for changes
+        if (this._watcher) { this._watcher.dispose(); }
+        if (fs.existsSync(dataPath)) {
+            const pattern = new vscode.RelativePattern(vscode.Uri.file(dataPath), '**/*');
+            this._watcher = vscode.workspace.createFileSystemWatcher(pattern);
+            const refresh = () => this.refreshFiles();
+            this._watcher.onDidCreate(refresh);
+            this._watcher.onDidDelete(refresh);
+            this._watcher.onDidChange(refresh);
+        }
+    }
+
+    resolveWebviewView(webviewView: vscode.WebviewView) {
+        this._view = webviewView;
+        webviewView.webview.options = { enableScripts: true };
+        webviewView.webview.html = getWebviewHtml();
+
+        // MARK: Handle messages from webview
+        webviewView.webview.onDidReceiveMessage(async msg => {
+            if (msg.command === 'upload') {
+                vscode.commands.executeCommand(`arduino-${EXT_TAG}-upload.upload${EXT_NAME}`);
+            } else if (msg.command === 'build') {
+                vscode.commands.executeCommand(`arduino-${EXT_TAG}-upload.build${EXT_NAME}`);
+            } else if (msg.command === 'refresh') {
+                this.refreshFiles();
+            } else if (msg.command === 'addFiles') {
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { vscode.window.showErrorMessage('No sketch open.'); return; }
+                const dataPath = path.join(sketchPath, 'data', msg.targetDir || '');
+                if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
+                const uris = await vscode.window.showOpenDialog({ canSelectMany: true, openLabel: 'Add to data/' });
+                if (uris) {
+                    for (const uri of uris) {
+                        const dest = uniquePath(dataPath, path.basename(uri.fsPath));
+                        fs.copyFileSync(uri.fsPath, dest);
+                    }
+                    this.refreshFiles();
+                }
+            } else if (msg.command === 'newFile') {
+                // MARK: New file — prompt name, create empty file
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { vscode.window.showErrorMessage('No sketch open.'); return; }
+                const name = await vscode.window.showInputBox({ prompt: 'New file name', placeHolder: 'filename.txt' });
+                if (!name) { return; }
+                const dataPath = path.join(sketchPath, 'data', msg.targetDir || '');
+                if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
+                const dest = uniquePath(dataPath, name);
+                fs.writeFileSync(dest, '');
+                this.refreshFiles();
+            } else if (msg.command === 'newFolder') {
+                // MARK: New folder — prompt name, create empty folder
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { vscode.window.showErrorMessage('No sketch open.'); return; }
+                const name = await vscode.window.showInputBox({ prompt: 'New folder name', placeHolder: 'folder' });
+                if (!name) { return; }
+                const dataPath = path.join(sketchPath, 'data', msg.targetDir || '');
+                if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
+                const dest = uniquePath(dataPath, name);
+                fs.mkdirSync(dest, { recursive: true });
+                this.refreshFiles();
+            } else if (msg.command === 'addFolder') {
+                // MARK: Add folder — recursively copy folder into data/
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { vscode.window.showErrorMessage('No sketch open.'); return; }
+                const dataPath = path.join(sketchPath, 'data', msg.targetDir || '');
+                if (!fs.existsSync(dataPath)) { fs.mkdirSync(dataPath, { recursive: true }); }
+                const uris = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Add folder to data/' });
+                if (uris && uris.length > 0) {
+                    const srcDir = uris[0].fsPath;
+                    const folderName = path.basename(srcDir);
+                    const destDir = uniquePath(dataPath, folderName);
+                    fs.cpSync(srcDir, destDir, { recursive: true });
+                    this.refreshFiles();
+                }
+            } else if (msg.command === 'dropFiles') {
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { return; }
+                const targetBase = msg.targetDir ? path.join(sketchPath, 'data', msg.targetDir) : path.join(sketchPath, 'data');
+                if (!fs.existsSync(targetBase)) { fs.mkdirSync(targetBase, { recursive: true }); }
+                // Create empty folders first (with auto-rename)
+                const folderRenameMap: Record<string, string> = {};
+                if (msg.folders) {
+                    for (const folder of msg.folders as string[]) {
+                        const parts = folder.split('/');
+                        const topLevel = parts[0];
+                        if (!folderRenameMap[topLevel]) {
+                            const renamedTop = path.basename(uniquePath(targetBase, topLevel));
+                            folderRenameMap[topLevel] = renamedTop;
+                        }
+                        parts[0] = folderRenameMap[topLevel];
+                        const dest = path.join(targetBase, parts.join(path.sep));
+                        if (!fs.existsSync(dest)) { fs.mkdirSync(dest, { recursive: true }); }
+                    }
+                }
+                for (const file of msg.files as { name: string; data: string }[]) {
+                    const buf = Buffer.from(file.data, 'base64');
+                    // Remap top-level folder name if it was renamed
+                    let fileName = file.name;
+                    const parts = fileName.split('/');
+                    if (parts.length > 1 && folderRenameMap[parts[0]]) {
+                        parts[0] = folderRenameMap[parts[0]];
+                        fileName = parts.join('/');
+                    }
+                    const dir = path.join(targetBase, path.dirname(fileName));
+                    if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+                    const dest = uniquePath(dir, path.basename(fileName));
+                    fs.writeFileSync(dest, buf);
+                }
+                this.refreshFiles();
+            } else if (msg.command === 'deleteFile') {
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { return; }
+                const filePath = path.join(sketchPath, 'data', msg.relPath);
+                if (fs.existsSync(filePath)) {
+                    const stat = fs.statSync(filePath);
+                    if (stat.isDirectory()) {
+                        fs.rmSync(filePath, { recursive: true });
+                    } else {
+                        fs.unlinkSync(filePath);
+                    }
+                    this.refreshFiles();
+                }
+            } else if (msg.command === 'openFile') {
+                // MARK: Open file in editor tab
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { return; }
+                const filePath = path.join(sketchPath, 'data', msg.relPath);
+                if (fs.existsSync(filePath)) {
+                    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+                    vscode.window.showTextDocument(doc);
+                }
+            } else if (msg.command === 'moveFile') {
+                // MARK: Move file/folder to another directory
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { return; }
+                const srcPath = path.join(sketchPath, 'data', msg.relPath);
+                const targetBase = msg.targetDir ? path.join(sketchPath, 'data', msg.targetDir) : path.join(sketchPath, 'data');
+                if (!fs.existsSync(srcPath)) { return; }
+                if (!fs.existsSync(targetBase)) { fs.mkdirSync(targetBase, { recursive: true }); }
+                const dest = uniquePath(targetBase, path.basename(srcPath));
+                fs.renameSync(srcPath, dest);
+                this.refreshFiles();
+            }
+        });
+
+        // Initial file listing
+        setTimeout(() => this.refreshFiles(), 500);
+    }
+}
+
+// ── Terminal helpers ────────────────────────────────────────
+
+// MARK: Nuke — patch Arduino IDE to hide our menu bar entry
+const NUKE_PRISTINE = 'const i=this.escapeAmpersand(t);return this.menu=i,i';
+const NUKE_PATCHED  = `const i=this.escapeAmpersand(t.filter(e=>!(e.id&&e.id.includes("${EXT_TAG}")&&!e.submenu)));return this.menu=i,i`;
+
+function nukeBundlePath(): string {
+    return path.resolve(vscode.env.appRoot, 'lib', 'frontend', 'bundle.js');
+}
+
+// Auto-nuke: tries direct write, returns true + reloads if patched. Silent on failure.
+function nukeMenuEntry(): boolean {
+    try {
+        const bundlePath = nukeBundlePath();
+        if (!bundlePath.startsWith(path.resolve(vscode.env.appRoot))) { return false; }
+        if (!fs.existsSync(bundlePath)) { return false; }
+
+        const content = fs.readFileSync(bundlePath, 'utf8');
+        if (content.includes(NUKE_PATCHED)) { return false; }
+        if (content.includes(NUKE_PRISTINE)) {
+            try { fs.accessSync(bundlePath, fs.constants.W_OK); }
+            catch { return false; } // no write permission — user can run command manually
+
+            const result = content.replace(NUKE_PRISTINE, NUKE_PATCHED);
+            if (result.length !== content.length + (NUKE_PATCHED.length - NUKE_PRISTINE.length)) { return false; }
+            fs.writeFileSync(bundlePath, result, 'utf8');
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+            return true;
+        }
+    } catch { /* silent */ }
+    return false;
+}
+
+// Elevated nuke: writes a temp Python script and runs with admin privileges (macOS/Linux)
+function nukeElevated(reverse = false): Promise<boolean> {
+    return new Promise((resolve) => {
+        const bundlePath = nukeBundlePath();
+        const from = reverse ? NUKE_PATCHED : NUKE_PRISTINE;
+        const to   = reverse ? NUKE_PRISTINE : NUKE_PATCHED;
+        const script = [
+            'import sys',
+            `f = ${JSON.stringify(bundlePath)}`,
+            `old = ${JSON.stringify(from)}`,
+            `new_ = ${JSON.stringify(to)}`,
+            'c = open(f).read()',
+            'if new_ in c: sys.exit(0)',
+            'if old not in c: sys.exit(1)',
+            'open(f, "w").write(c.replace(old, new_, 1))',
+        ].join('\n');
+        const scriptPath = path.join(tmpdir(), `${EXT_TAG}-nuke-${Date.now()}.py`);
+        fs.writeFileSync(scriptPath, script, 'utf8');
+
+        let proc;
+        if (platform() === 'darwin') {
+            proc = spawn('osascript', ['-e', `do shell script "python3 '${scriptPath}'" with administrator privileges`]);
+        } else {
+            proc = spawn('pkexec', ['python3', scriptPath]);
+        }
+        proc.on('close', (code) => { try { fs.unlinkSync(scriptPath); } catch {} resolve(code === 0); });
+        proc.on('error', ()     => { try { fs.unlinkSync(scriptPath); } catch {} resolve(false); });
+    });
+}
+
+export function activate(context: vscode.ExtensionContext) {
+
+    // Lazy Arduino context — resolved on first use
+    let arduinoContext: ArduinoContext | undefined;
+    function getArduinoContext(): ArduinoContext | undefined {
+        if (!arduinoContext) {
+            arduinoContext = vscode.extensions.getExtension('dankeboy36.vscode-arduino-api')?.exports;
+        }
+        return arduinoContext;
+    }
+
+    // MARK: Register sidebar first (before Arduino API check so icon always appears)
+    const viewProvider = new LittleFSViewProvider(() => getArduinoContext()?.sketchPath);
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(`${EXT_TAG}-actions`, viewProvider, {
+        webviewOptions: { retainContextWhenHidden: true }
+    }));
+
     // Register the upload command
-    const disposable = vscode.commands.registerCommand('arduino-littlefs-upload.uploadLittleFS', async () => { doOperation(context, arduinoContext, true); });
+    const disposable = vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.upload${EXT_NAME}`, async () => {
+        const ctx = getArduinoContext();
+        if (!ctx) { vscode.window.showErrorMessage("Unable to load the Arduino IDE Context extension."); return; }
+        doOperation(context, ctx, true);
+    });
     context.subscriptions.push(disposable);
 
     // Register the build command
-    const disposable2 = vscode.commands.registerCommand('arduino-littlefs-upload.buildLittleFS', async () => { doOperation(context, arduinoContext, false); });
+    const disposable2 = vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.build${EXT_NAME}`, async () => {
+        const ctx = getArduinoContext();
+        if (!ctx) { vscode.window.showErrorMessage("Unable to load the Arduino IDE Context extension."); return; }
+        doOperation(context, ctx, false);
+    });
     context.subscriptions.push(disposable2);
+
+    // MARK: Clear terminal command — shown in view title bar
+    context.subscriptions.push(vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.clearTerminal`, () => {
+        if (writerReady) { writeEmitter.fire(clear + resetStyle); }
+    }));
+
+    // MARK: Toggle FS Top Bar — patch/unpatch bundle.js, with elevation for macOS/Linux
+    context.subscriptions.push(vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.toggleTopBarFS`, async () => {
+        const bundlePath = nukeBundlePath();
+        if (!fs.existsSync(bundlePath)) {
+            vscode.window.showErrorMessage(`${EXT_NAME}: bundle.js not found.`);
+            return;
+        }
+        const content = fs.readFileSync(bundlePath, 'utf8');
+        const isPatched = content.includes(NUKE_PATCHED);
+        const isPristine = content.includes(NUKE_PRISTINE);
+
+        if (!isPatched && !isPristine) {
+            vscode.window.showWarningMessage(`${EXT_NAME}: IDE version changed — cannot toggle patch.`);
+            return;
+        }
+
+        // Determine direction: patched → restore, pristine → patch
+        const from = isPatched ? NUKE_PATCHED : NUKE_PRISTINE;
+        const to   = isPatched ? NUKE_PRISTINE : NUKE_PATCHED;
+        const verb = isPatched ? 'restored' : 'removed';
+
+        // Try direct write first
+        let done = false;
+        try {
+            fs.accessSync(bundlePath, fs.constants.W_OK);
+            const result = content.replace(from, to);
+            if (result.length === content.length + (to.length - from.length)) {
+                fs.writeFileSync(bundlePath, result, 'utf8');
+                done = true;
+            }
+        } catch { /* fall through to elevated */ }
+
+        // Elevated write for macOS/Linux
+        if (!done && (platform() === 'darwin' || platform() === 'linux')) {
+            done = await nukeElevated(isPatched);
+        }
+
+        if (done) {
+            vscode.window.showInformationMessage(`${EXT_NAME}: FS top bar entry ${verb}. Reloading...`);
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+        } else {
+            vscode.window.showErrorMessage(`${EXT_NAME}: Toggle failed. Check permissions.`);
+        }
+    }));
 }
 
 async function doOperation(context: vscode.ExtensionContext, arduinoContext: ArduinoContext, doUpload: boolean) {
@@ -222,14 +578,15 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         return;
     }
 
-    if (!await waitForTerminal("LittleFS Upload")) {
+    if (!await waitForTerminal(`${EXT_NAME} Upload`)) {
         vscode.window.showErrorMessage("Unable to open upload terminal");
+        return;
     }
 
     // Clear the terminal
     writeEmitter.fire(clear + resetStyle);
 
-    writeEmitter.fire(bold("LittleFS Filesystem " + (doUpload ? "Uploader" : "Builder" ) + " v" + String(context.extension.packageJSON.version) + " -- https://github.com/earlephilhower/arduino-littlefs-upload\r\n\r\n"));
+    writeEmitter.fire(bold(`${EXT_NAME} Filesystem ` + (doUpload ? "Uploader" : "Builder" ) + " v" + String(context.extension.packageJSON.version) + ` -- https://github.com/HamzaYslmn/arduino-${EXT_TAG}-upload\r\n\r\n`));
 
     writeEmitter.fire(blue(" Sketch Path: ") + green("" + arduinoContext.sketchPath) + "\r\n");
     // Need to have a data folder present, or this isn't gonna work...
@@ -375,6 +732,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         mklittlefs = tool + path.sep + mklittlefs;
     } else {
         writeEmitter.fire(red("\r\n\r\nERROR: mklittlefs not found!\r\n" + resetStyle));
+        return;
     }
 
     let network = false;
@@ -434,12 +792,9 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         openocd = openocdPath + path.sep + "bin" + path.sep + openocd;
     }
 
-    // We can't always know where the compile path is, so just use a temp name
-    const tmp = require('tmp');
-    tmp.setGracefulCleanup();
     let imageFile = "";
     if (doUpload) {
-        imageFile = tmp.tmpNameSync({postfix: ".littlefs.bin"});
+        imageFile = path.join(tmpdir(), `${EXT_TAG}-${Date.now()}.bin`);
     } else {
         imageFile = arduinoContext.sketchPath + path.sep + "mklittlefs.bin";
         writeEmitter.fire(blue("Output File:  ") + green(imageFile) + "\r\n");
@@ -448,10 +803,10 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
     let buildOpts =  ["-c", dataFolder, "-p", String(page), "-b", String(blocksize), "-s", String(fsEnd - fsStart), imageFile];
 
     // All mklittlefs take the same options, so run in common
-    writeEmitter.fire(bold("\r\nBuilding LittleFS filesystem\r\n"));
+    writeEmitter.fire(bold(`\r\nBuilding ${EXT_NAME} filesystem\r\n`));
     writeEmitter.fire(blue("Command Line: ") + green(mklittlefs + " " + buildOpts.join(" ")) + "\r\n");
 
-    let exitCode = await runCommand(mklittlefs, buildOpts);
+    let exitCode = (await runCommand(mklittlefs, buildOpts)).code;
     if (exitCode) {
         writeEmitter.fire(red("\r\n\r\nERROR:  Mklittlefs failed, error code: " + String(exitCode) + "\r\n\r\n"));
         return;
@@ -459,7 +814,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
 
     if (!doUpload) {
         writeEmitter.fire(bold("\r\nCompleted build.\r\n\r\n"));
-        vscode.window.showInformationMessage("LittleFS build completed!");
+        vscode.window.showInformationMessage(`${EXT_NAME} build completed!`);
         return;
     }
 
@@ -472,7 +827,7 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
                 let picotoolOpts = ["uf2", "convert", imageFile, "-t", "bin", imageFile +  ".uf2", "-o", "0x" + fsStart.toString(16), "--family", "data"];
                 writeEmitter.fire(bold("\r\nGenerating UF2 image\r\n"));
                 writeEmitter.fire(blue("Command Line: ") + green(picotool + " " + picotoolOpts.join(" ") + "\r\n"));
-                exitCode = await runCommand(picotool, picotoolOpts);
+                exitCode = (await runCommand(picotool, picotoolOpts)).code;
                 if (exitCode) {
                     writeEmitter.fire(red("\r\n\r\nERROR:  Generation failed, error code: " + String(exitCode) + "\r\n\r\n"));
                     return;
@@ -545,8 +900,8 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
                 espTool = espToolPath + path.sep + espTool;
             }
             uploadOpts = ["--chip", esp32variant, "--port", serialPort, "--baud", String(uploadSpeed),
-                "--before", "default_reset", "--after", "hard_reset", "write_flash", "-z",
-                "--flash_mode", flashMode, "--flash_freq", flashFreq, "--flash_size", "detect", String(fsStart), imageFile];
+                "--before", "default-reset", "--after", "hard-reset", "write-flash", "-z",
+                "--flash-mode", flashMode, "--flash-freq", flashFreq, "--flash-size", "detect", String(fsStart), imageFile];
             if ((platform() === 'win32') || (platform() === 'darwin')) {
                 cmdApp = espTool + extEspTool; // Have binary EXE on Mac/Windows
             } else {
@@ -574,21 +929,40 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
             if (uploadPath) {
                 upload = uploadPath + path.sep + upload;
             }
-            uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write_flash", String(fsStart), imageFile];
+            uploadOpts = [upload, "--chip", "esp8266", "--port", serialPort, "--baud", String(uploadSpeed), "write-flash", String(fsStart), imageFile];
         }
     }
 
-    writeEmitter.fire(bold("\r\nUploading LittleFS filesystem\r\n"));
+    writeEmitter.fire(bold(`\r\nUploading ${EXT_NAME} filesystem\r\n`));
     writeEmitter.fire(blue("Command Line: ") + green(cmdApp + " " + uploadOpts.join(" ") + "\r\n"));
 
-    exitCode = await runCommand(cmdApp, uploadOpts);
-    if (exitCode) {
-        writeEmitter.fire(red("\r\n\r\nERROR:  Upload failed, error code: " + String(exitCode) + "\r\n\r\n"));
+    // MARK: Try upload — if port busy, toggle serial monitor and retry
+    let result = await runCommand(cmdApp, uploadOpts);
+    let toggled = false;
+
+    if (result.code !== 0 && (result.stderr.includes('could not open port') || result.stderr.includes('PermissionError'))) {
+        writeEmitter.fire(blue("\r\nPort busy — closing Serial Monitor...\r\n"));
+        await vscode.commands.executeCommand('serial-monitor:toggle');
+        await new Promise(r => setTimeout(r, 1500));
+
+        writeEmitter.fire(blue("Retrying upload...\r\n"));
+        result = await runCommand(cmdApp, uploadOpts);
+        toggled = true;
+    }
+
+    // MARK: Reopen serial monitor if we closed it
+    if (toggled) {
+        writeEmitter.fire(blue("Reopening Serial Monitor...\r\n"));
+        await vscode.commands.executeCommand('serial-monitor:toggle');
+    }
+
+    if (result.code !== 0) {
+        writeEmitter.fire(red("\r\n\r\nERROR:  Upload failed, error code: " + String(result.code) + "\r\n\r\n"));
         return;
     }
 
     writeEmitter.fire(bold("\r\nCompleted upload.\r\n\r\n"));
-    vscode.window.showInformationMessage("LittleFS upload completed!");
+    vscode.window.showInformationMessage(`${EXT_NAME} upload completed!`);
 }
 
 export function deactivate() { }
