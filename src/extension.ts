@@ -403,6 +403,17 @@ class LittleFSViewProvider implements vscode.WebviewViewProvider {
                     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
                     vscode.window.showTextDocument(doc);
                 }
+            } else if (msg.command === 'moveFile') {
+                // MARK: Move file/folder to another directory
+                const sketchPath = this._getSketchPath();
+                if (!sketchPath) { return; }
+                const srcPath = path.join(sketchPath, 'data', msg.relPath);
+                const targetBase = msg.targetDir ? path.join(sketchPath, 'data', msg.targetDir) : path.join(sketchPath, 'data');
+                if (!fs.existsSync(srcPath)) { return; }
+                if (!fs.existsSync(targetBase)) { fs.mkdirSync(targetBase, { recursive: true }); }
+                const dest = uniquePath(targetBase, path.basename(srcPath));
+                fs.renameSync(srcPath, dest);
+                this.refreshFiles();
             }
         });
 

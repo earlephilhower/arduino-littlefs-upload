@@ -102,6 +102,8 @@ export function getWebviewHtml(): string {
     opacity: 0.85;
   }
   .file-icon { opacity: 0.6; font-size: 13px; flex-shrink: 0; }
+  .folder-arrow { font-size: 8px; opacity: 0.5; flex-shrink: 0; width: 10px; text-align: center; cursor: pointer; }
+  .folder-arrow:hover { opacity: 1; }
   .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .file-size { opacity: 0.5; font-size: 11px; flex-shrink: 0; }
   .file-del {
@@ -206,6 +208,32 @@ export function getWebviewHtml(): string {
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     }
 
+    // MARK: Collapse/expand state
+    const savedState = vscode.getState() || {};
+    const collapsed = savedState.collapsed || {};
+    function saveCollapsed() { vscode.setState({ ...vscode.getState(), collapsed }); }
+    function toggleFolder(relPath) {
+      collapsed[relPath] = !collapsed[relPath];
+      saveCollapsed();
+      applyCollapsed();
+    }
+    function applyCollapsed() {
+      document.querySelectorAll('.file-item[data-path]').forEach(el => {
+        const p = el.dataset.path;
+        // Check if any ancestor folder is collapsed
+        let hidden = false;
+        for (const dir in collapsed) {
+          if (collapsed[dir] && p.startsWith(dir + '/')) { hidden = true; break; }
+        }
+        el.style.display = hidden ? 'none' : '';
+        // Update arrow
+        if (el.dataset.isdir === 'true') {
+          const arrow = el.querySelector('.folder-arrow');
+          if (arrow) arrow.textContent = collapsed[p] ? '\u25B6' : '\u25BC';
+        }
+      });
+    }
+
     // MARK: Receive file listing from extension
     window.addEventListener('message', event => {
       const msg = event.data;
@@ -219,21 +247,24 @@ export function getWebviewHtml(): string {
         for (const f of msg.files) {
           const depth = (f.relPath.match(/\\//g) || []).length;
           const indentStyle = depth > 0 ? ' style="padding-left:' + (depth * 16) + 'px"' : '';
+          const esc = f.relPath.replace(/'/g, "\\\\'");
+          const arrow = f.isDir ? '<span class="folder-arrow" onclick="event.stopPropagation(); toggleFolder(\\'' + esc + '\\')">\u25BC</span>' : '';
           const icon = f.isDir ? '&#128193;' : '&#128196;';
           const size = f.isDir ? '' : '<span class="file-size">' + formatSize(f.size) + '</span>';
-          const esc = f.relPath.replace(/'/g, "\\\\'");
           const del = '<button class="file-del" onclick="event.stopPropagation(); deleteFile(\\'' + esc + '\\')" title="Delete">&#10005;</button>';
-          html += '<li class="file-item"'
+          html += '<li class="file-item" draggable="true"'
             + indentStyle
             + ' data-path="' + f.relPath.replace(/"/g, '&quot;') + '"'
             + ' data-isdir="' + f.isDir + '"'
             + (f.isDir ? ' data-dir="' + f.relPath.replace(/"/g, '&quot;') + '"' : ' onclick="openFile(\\'' + esc + '\\')'+ '"')
             + '>'
+            + arrow
             + '<span class="file-icon">' + icon + '</span>'
             + '<span class="file-name">' + f.name + '</span>'
             + size + del + '</li>';
         }
         list.innerHTML = html;
+        applyCollapsed();
       }
     });
 
@@ -290,6 +321,19 @@ export function getWebviewHtml(): string {
 
     // MARK: Drag and drop on entire sidebar
     let dropTargetDir = '';
+    let dragSourcePath = '';
+
+    // Internal drag start
+    document.addEventListener('dragstart', e => {
+      const item = e.target.closest('.file-item[data-path]');
+      if (item) {
+        dragSourcePath = item.dataset.path;
+        e.dataTransfer.setData('text/plain', dragSourcePath);
+        e.dataTransfer.effectAllowed = 'move';
+      }
+    });
+
+    document.addEventListener('dragend', () => { dragSourcePath = ''; });
 
     document.body.addEventListener('dragover', e => {
       e.preventDefault();
@@ -324,6 +368,19 @@ export function getWebviewHtml(): string {
       e.preventDefault();
       document.body.classList.remove('drag-over');
       document.querySelectorAll('.drop-target, .drop-child').forEach(el => el.classList.remove('drop-target', 'drop-child'));
+
+      // Internal move
+      if (dragSourcePath) {
+        const src = dragSourcePath;
+        dragSourcePath = '';
+        if (src !== dropTargetDir) {
+          vscode.postMessage({ command: 'moveFile', relPath: src, targetDir: dropTargetDir });
+        }
+        dropTargetDir = '';
+        return;
+      }
+
+      // External drop
       const files = [];
       const folders = [];
 
