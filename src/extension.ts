@@ -370,41 +370,68 @@ class LittleFSViewProvider implements vscode.WebviewViewProvider {
 
 // ── Terminal helpers ────────────────────────────────────────
 
-// MARK: Nuke — patch Arduino IDE to hide our menu bar entry (JUST EXT_TAG)
-// If IDE updates change the target code, patch silently skips (FS returns but IDE is safe).
-// Returns true + reloads the window when a fresh patch is applied; caller should bail out.
+// MARK: Nuke — patch Arduino IDE to hide our menu bar entry
+const NUKE_PRISTINE = 'const i=this.escapeAmpersand(t);return this.menu=i,i';
+const NUKE_PATCHED  = `const i=this.escapeAmpersand(t.filter(e=>!(e.id&&e.id.includes("${EXT_TAG}")&&!e.submenu)));return this.menu=i,i`;
+
+function nukeBundlePath(): string {
+    return path.resolve(vscode.env.appRoot, 'lib', 'frontend', 'bundle.js');
+}
+
+// Auto-nuke: tries direct write, returns true + reloads if patched. Silent on failure.
 function nukeMenuEntry(): boolean {
     try {
-        const bundlePath = path.resolve(vscode.env.appRoot, 'lib', 'frontend', 'bundle.js');
-        // Security: ensure resolved path stays inside appRoot
+        const bundlePath = nukeBundlePath();
         if (!bundlePath.startsWith(path.resolve(vscode.env.appRoot))) { return false; }
         if (!fs.existsSync(bundlePath)) { return false; }
 
-        const pristine = 'const i=this.escapeAmpersand(t);return this.menu=i,i';
-        const patched  = `const i=this.escapeAmpersand(t.filter(e=>!(e.id&&e.id.includes("${EXT_TAG}")&&!e.submenu)));return this.menu=i,i`;
         const content = fs.readFileSync(bundlePath, 'utf8');
-
-        if (content.includes(patched)) { return false; } // already patched
-        if (content.includes(pristine)) {
-            // Check write permission before attempting patch (macOS/Linux may be read-only)
+        if (content.includes(NUKE_PATCHED)) { return false; }
+        if (content.includes(NUKE_PRISTINE)) {
             try { fs.accessSync(bundlePath, fs.constants.W_OK); }
-            catch { console.warn(`[${EXT_NAME}] No write permission to bundle.js — "FS" menu entry cannot be hidden.`); return false; }
+            catch { return false; } // no write permission — user can run command manually
 
-            const result = content.replace(pristine, patched);
-            // Verify exactly one replacement and size delta matches
-            if (result.length !== content.length + (patched.length - pristine.length)) { return false; }
+            const result = content.replace(NUKE_PRISTINE, NUKE_PATCHED);
+            if (result.length !== content.length + (NUKE_PATCHED.length - NUKE_PRISTINE.length)) { return false; }
             fs.writeFileSync(bundlePath, result, 'utf8');
             vscode.commands.executeCommand('workbench.action.reloadWindow');
-            return true; // caller should return early — window is reloading
+            return true;
         }
-
-        console.warn(`[${EXT_NAME}] Menu patch skipped: IDE bundle.js has changed. "FS" may appear in the top menu bar.`);
-    } catch (e) { console.warn(`[${EXT_NAME}] Menu patch error:`, e); }
+    } catch { /* silent */ }
     return false;
 }
 
+// Elevated nuke: writes a temp Python script and runs with admin privileges (macOS/Linux)
+function nukeElevated(reverse = false): Promise<boolean> {
+    return new Promise((resolve) => {
+        const bundlePath = nukeBundlePath();
+        const from = reverse ? NUKE_PATCHED : NUKE_PRISTINE;
+        const to   = reverse ? NUKE_PRISTINE : NUKE_PATCHED;
+        const script = [
+            'import sys',
+            `f = ${JSON.stringify(bundlePath)}`,
+            `old = ${JSON.stringify(from)}`,
+            `new_ = ${JSON.stringify(to)}`,
+            'c = open(f).read()',
+            'if new_ in c: sys.exit(0)',
+            'if old not in c: sys.exit(1)',
+            'open(f, "w").write(c.replace(old, new_, 1))',
+        ].join('\n');
+        const scriptPath = path.join(tmpdir(), `${EXT_TAG}-nuke-${Date.now()}.py`);
+        fs.writeFileSync(scriptPath, script, 'utf8');
+
+        let proc;
+        if (platform() === 'darwin') {
+            proc = spawn('osascript', ['-e', `do shell script "python3 '${scriptPath}'" with administrator privileges`]);
+        } else {
+            proc = spawn('pkexec', ['python3', scriptPath]);
+        }
+        proc.on('close', (code) => { try { fs.unlinkSync(scriptPath); } catch {} resolve(code === 0); });
+        proc.on('error', ()     => { try { fs.unlinkSync(scriptPath); } catch {} resolve(false); });
+    });
+}
+
 export function activate(context: vscode.ExtensionContext) {
-    if (nukeMenuEntry()) { return; }
 
     // Lazy Arduino context — resolved on first use
     let arduinoContext: ArduinoContext | undefined;
@@ -436,6 +463,51 @@ export function activate(context: vscode.ExtensionContext) {
         doOperation(context, ctx, false);
     });
     context.subscriptions.push(disposable2);
+
+    // MARK: Toggle FS Top Bar — patch/unpatch bundle.js, with elevation for macOS/Linux
+    context.subscriptions.push(vscode.commands.registerCommand(`arduino-${EXT_TAG}-upload.toggleTopBarFS`, async () => {
+        const bundlePath = nukeBundlePath();
+        if (!fs.existsSync(bundlePath)) {
+            vscode.window.showErrorMessage(`${EXT_NAME}: bundle.js not found.`);
+            return;
+        }
+        const content = fs.readFileSync(bundlePath, 'utf8');
+        const isPatched = content.includes(NUKE_PATCHED);
+        const isPristine = content.includes(NUKE_PRISTINE);
+
+        if (!isPatched && !isPristine) {
+            vscode.window.showWarningMessage(`${EXT_NAME}: IDE version changed — cannot toggle patch.`);
+            return;
+        }
+
+        // Determine direction: patched → restore, pristine → patch
+        const from = isPatched ? NUKE_PATCHED : NUKE_PRISTINE;
+        const to   = isPatched ? NUKE_PRISTINE : NUKE_PATCHED;
+        const verb = isPatched ? 'restored' : 'removed';
+
+        // Try direct write first
+        let done = false;
+        try {
+            fs.accessSync(bundlePath, fs.constants.W_OK);
+            const result = content.replace(from, to);
+            if (result.length === content.length + (to.length - from.length)) {
+                fs.writeFileSync(bundlePath, result, 'utf8');
+                done = true;
+            }
+        } catch { /* fall through to elevated */ }
+
+        // Elevated write for macOS/Linux
+        if (!done && (platform() === 'darwin' || platform() === 'linux')) {
+            done = await nukeElevated(isPatched);
+        }
+
+        if (done) {
+            vscode.window.showInformationMessage(`${EXT_NAME}: FS top bar entry ${verb}. Reloading...`);
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+        } else {
+            vscode.window.showErrorMessage(`${EXT_NAME}: Toggle failed. Check permissions.`);
+        }
+    }));
 }
 
 async function doOperation(context: vscode.ExtensionContext, arduinoContext: ArduinoContext, doUpload: boolean) {

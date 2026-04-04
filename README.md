@@ -72,6 +72,14 @@ Make sure the board platform package is installed and up to date in the Arduino 
 ### "No data folder found"
 Create a `data/` folder inside your sketch directory and add at least one file.
 
+### "FS" appears in the top menu bar
+Arduino IDE (Theia) adds a spurious top menu entry for sidebar plugins. To remove it:
+1. Press **Ctrl+Shift+P** (or **Cmd+Shift+P** on macOS)
+2. Type **Toggle FS Top Bar** and run the command
+3. The IDE will reload with the entry removed
+
+On macOS/Linux, you may be prompted for your admin password (one-time). The patch persists until the IDE is updated — just re-run the command after an update.
+
 ## Credits
 
 - [Earle F. Philhower, III](https://github.com/earlephilhower) — original plugin

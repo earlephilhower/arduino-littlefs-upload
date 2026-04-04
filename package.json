@@ -34,6 +34,10 @@
         "command": "arduino-littlefs-upload.buildLittleFS",
         "title": "Build LittleFS image in sketch directory",
         "icon": "$(package)"
+      },
+      {
+        "command": "arduino-littlefs-upload.toggleTopBarFS",
+        "title": "Toggle FS Top Bar"
       }
     ],
     "viewsContainers": {
