@@ -402,6 +402,8 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
         writeEmitter.fire(blue("Network Info: ") + green(serialPort + ":" + String(networkPort)) + "\r\n");
     } else if (arduinoContext.port?.protocol === "serial") {
         writeEmitter.fire(blue(" Serial Port: ") + green(serialPort) + "\r\n");
+    } else if (arduinoContext.port?.protocol === "uf2conv") {
+        writeEmitter.fire(blue("   UF2 Board: ") + green("UF2_Board") + "\r\n");
     } else {
         if (doUpload) {
             writeEmitter.fire(red("\r\n\r\nERROR: Unknown upload method '" + String(arduinoContext.port?.properties.port) + "' specified, check IDE menus.\r\n"));
@@ -515,7 +517,11 @@ async function doOperation(context: vscode.ExtensionContext, arduinoContext: Ard
                     uf2conv = uf2Path + path.sep + uf2conv;
                 }
                 if (conversion) {
-                    uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+                    if (serialPort === "uf2conv") {
+                        uploadOpts = [uf2conv, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+                    } else {
+                        uploadOpts = [uf2conv, "--serial", serialPort, "--family", "RP2040", imageFile + ".uf2", "--deploy"];
+                    }
                 } else {
                     uploadOpts = [uf2conv, "--base", String(fsStart), "--serial", serialPort, "--family", "RP2040", imageFile];
                 }
